@@ -1,0 +1,9 @@
+{
+  "@context": "https://www.w3.org/ns/activitystreams",
+  "id": "https://evanp.github.io/note/uBja5jqPi9wg6f04gPHX9/likes.jsonld",
+  "type": "OrderedCollection",
+  "name": "Evan Prodromou's note's likes",
+  "totalItems": 0,
+  "attributedTo": "https://evanp.github.io/actor.jsonld",
+  "to": "https://www.w3.org/ns/activitystreams#Public"
+}

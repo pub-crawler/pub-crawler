@@ -1,0 +1,12 @@
+{
+  "@context": "https://www.w3.org/ns/activitystreams",
+  "type": "Note",
+  "id": "https://evanp.github.io/note/uBja5jqPi9wg6f04gPHX9.jsonld",
+  "content": "Hello, World!",
+  "published": "2024-02-13T18:20:00Z",
+  "attributedTo": "https://evanp.github.io/actor.jsonld",
+  "to": "https://www.w3.org/ns/activitystreams#Public",
+  "likes": "https://evanp.github.io/note/uBja5jqPi9wg6f04gPHX9/likes.jsonld",
+  "shares": "https://evanp.github.io/note/uBja5jqPi9wg6f04gPHX9/shares.jsonld",
+  "replies": "https://evanp.github.io/note/uBja5jqPi9wg6f04gPHX9/replies.jsonld"
+}

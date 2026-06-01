@@ -1,0 +1,10 @@
+{
+  "@context": "https://www.w3.org/ns/activitystreams",
+  "type": "Create",
+  "id": "https://evanp.github.io/create/r8EvBRkks519CeMiwVSAH.jsonld",
+  "actor": "https://evanp.github.io/actor.jsonld",
+  "object": "https://evanp.github.io/note/uBja5jqPi9wg6f04gPHX9.jsonld",
+  "summary": "Evan created a note",
+  "published": "2024-02-13T18:20:00Z",
+  "to": "https://www.w3.org/ns/activitystreams#Public"
+}

@@ -1,0 +1,10 @@
+{
+  "subject" : "acct:evanp@evanp.github.io",
+  "links": [
+    {
+       "rel": "self",
+       "type": "application/activity+json",
+       "href": "https://evanp.github.io/actor.jsonld"
+    }
+  ]
+}

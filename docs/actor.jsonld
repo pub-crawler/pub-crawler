@@ -1,0 +1,18 @@
+{
+  "@context": "https://www.w3.org/ns/activitystreams",
+  "id": "https://evanp.github.io/actor.jsonld",
+  "type": "Person",
+  "name": "Evan Prodromou",
+  "preferredUsername": "evanp",
+  "summary": "I'm a software developer interested in decentralized social networks, web standards, and open source software.",
+  "icon": {
+    "type": "Image",
+    "mediaType": "image/jpeg",
+    "url": "https://evanp.github.io/evanp.jpg"
+  },
+  "inbox": "https://evanp.github.io/inbox.jsonld",
+  "outbox": "https://evanp.github.io/outbox.jsonld",
+  "following": "https://evanp.github.io/following.jsonld",
+  "followers": "https://evanp.github.io/followers.jsonld",
+  "liked": "https://evanp.github.io/liked.jsonld"
+}

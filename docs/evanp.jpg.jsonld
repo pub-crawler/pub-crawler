@@ -1,0 +1,10 @@
+{
+  "@context": "https://www.w3.org/ns/activitystreams",
+  "type": "Image",
+  "id": "https://evanp.github.io/evanp.jpg.jsonld",
+  "mediaType": "image/jpeg",
+  "url": "https://evanp.github.io/evanp.jpg",
+  "summary": "Evan Prodromou avatar",
+  "attributedTo": "https://evanp.github.io/actor.jsonld",
+  "to": "https://www.w3.org/ns/activitystreams#Public"
+}
