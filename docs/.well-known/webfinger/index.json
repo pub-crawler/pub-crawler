@@ -1,10 +1,10 @@
 {
-  "subject" : "acct:evanp@evanp.github.io",
+  "subject" : "acct:bot@pub-crawler.github.io",
   "links": [
     {
        "rel": "self",
        "type": "application/activity+json",
-       "href": "https://evanp.github.io/actor.jsonld"
+       "href": "https://pub-crawler.github.io/actor.jsonld"
     }
   ]
 }

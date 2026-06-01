@@ -1,9 +1,9 @@
 {
   "@context": "https://www.w3.org/ns/activitystreams",
-  "id": "https://evanp.github.io/liked.jsonld",
+  "id": "https://pub-crawler.github.io/liked.jsonld",
   "type": "OrderedCollection",
-  "name": "Evan Prodromou's liked",
+  "name": "Pub Crawler's liked",
   "totalItems": 0,
-  "attributedTo": "https://evanp.github.io/actor.jsonld",
+  "attributedTo": "https://pub-crawler.github.io/actor.jsonld",
   "to": "https://www.w3.org/ns/activitystreams#Public"
 }

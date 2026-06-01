@@ -1,9 +1,9 @@
 {
   "@context": "https://www.w3.org/ns/activitystreams",
-  "id": "https://evanp.github.io/inbox.jsonld",
+  "id": "https://pub-crawler.github.io/inbox.jsonld",
   "type": "OrderedCollection",
-  "name": "Evan Prodromou's inbox",
+  "name": "Pub Crawler's inbox",
   "totalItems": 0,
-  "attributedTo": "https://evanp.github.io/actor.jsonld",
-  "to": "https://evanp.github.io/actor.jsonld"
+  "attributedTo": "https://pub-crawler.github.io/actor.jsonld",
+  "to": "https://pub-crawler.github.io/actor.jsonld"
 }

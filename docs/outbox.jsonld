@@ -1,15 +1,9 @@
 {
   "@context": "https://www.w3.org/ns/activitystreams",
-  "id": "https://evanp.github.io/outbox.jsonld",
+  "id": "https://pub-crawler.github.io/outbox.jsonld",
   "type": "OrderedCollection",
-  "name": "Evan Prodromou's outbox",
-  "totalItems": 1,
-  "attributedTo": "https://evanp.github.io/actor.jsonld",
-  "to": "https://www.w3.org/ns/activitystreams#Public",
-  "items": [
-    { "id": "https://evanp.github.io/create/r8EvBRkks519CeMiwVSAH.jsonld",
-      "type": "Create",
-      "summary": "Evan created a note"
-    }
-  ]
+  "name": "Pub Crawler's outbox",
+  "totalItems": 0,
+  "attributedTo": "https://pub-crawler.github.io/actor.jsonld",
+  "to": "https://www.w3.org/ns/activitystreams#Public"
 }

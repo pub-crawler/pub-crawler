@@ -1,9 +1,9 @@
 {
   "@context": "https://www.w3.org/ns/activitystreams",
-  "id": "https://evanp.github.io/following.jsonld",
+  "id": "https://pub-crawler.github.io/following.jsonld",
   "type": "OrderedCollection",
-  "name": "Evan Prodromou's following",
+  "name": "Pub Crawler's following",
   "totalItems": 0,
-  "attributedTo": "https://evanp.github.io/actor.jsonld",
+  "attributedTo": "https://pub-crawler.github.io/actor.jsonld",
   "to": "https://www.w3.org/ns/activitystreams#Public"
 }
