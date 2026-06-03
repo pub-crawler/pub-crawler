@@ -29,6 +29,7 @@ LuV5gxMckcMZ2Y16cadKswvtXylISPMlorB/NHEMViQlaOcSQyi26U93I5Ly4UDx
 AS2_CONTEXT = "https://www.w3.org/ns/activitystreams"
 SECURITY_CONTEXT = "https://w3id.org/security/v1"
 FEP_5711_CONTEXT = "https://w3id.org/fep/5711"
+WEBFINGER_CONTEXT = "https://purl.archive.org/socialweb/webfinger"
 
 AS2_TYPE = "application/activity+json"
 LD_JSON_TYPE = "application/ld+json"
