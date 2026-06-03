@@ -1,13 +1,14 @@
-"""Tests for WebfingerHandler (step 1) — resolve a seed acct, add a bare node.
+"""Tests for WebfingerHandler (step 4) — resolve a seed acct, enqueue its actor.
 
-Step-1 contract: handle resolves the webfinger address to an actor id and adds
-it to the graph as a node with the actor id ONLY — no attributes (no
-last_fetch_date; it hasn't been fetched, ActorHandler stamps that later). It
-does NOT enqueue yet (that arrives in step 4).
+Step-4 contract: handle resolves the webfinger address to an actor id, adds it
+to the graph as a bare node (no attrs — ActorHandler stamps those later), and
+enqueues an actor job at depth 0. Jobs are packed dicts on one asyncio.Queue.
 
-Pure unit tests via DI: a fake async webfinger client, a spy queue that would
-record any enqueue, and a real networkx DiGraph. No HTTP.
+Pure unit tests via DI: a fake async webfinger client, a real asyncio.Queue, a
+real networkx DiGraph. No HTTP.
 """
+
+import asyncio
 
 import networkx as nx
 import pytest
@@ -17,8 +18,8 @@ from pub_crawler.webfinger_handler import WebfingerHandler
 ACCT = "evan@cosocial.ca"
 ACTOR_ID = "https://cosocial.ca/users/evan"
 
-# Handlers receive the packed job dict (matches main.py's queue payload).
 WF_JOB = {"job_type": "webfinger", "webfinger": ACCT}
+ACTOR_JOB = {"job_type": "actor", "actor_id": ACTOR_ID, "depth": 0}
 
 
 class FakeWebfingerClient:
@@ -34,44 +35,37 @@ class FakeWebfingerClient:
         return self.result
 
 
-class SpyQueue:
-    def __init__(self):
-        self.actors = []  # (actor_id, depth) tuples, if anything were enqueued
-
-    def add_actor(self, actor_id, depth):
-        self.actors.append((actor_id, depth))
-
-
 async def test_adds_the_actor_id_as_a_bare_node():
     client = FakeWebfingerClient()
-    queue = SpyQueue()
+    queue = asyncio.Queue()
     graph = nx.DiGraph()
 
     await WebfingerHandler(client, queue, graph).handle(WF_JOB)
 
     assert client.calls == [ACCT]
     assert graph.has_node(ACTOR_ID)
-    # The actor id only — no attributes yet (not fetched).
+    # Still bare — ActorHandler fills in the metadata when it fetches.
     assert dict(graph.nodes[ACTOR_ID]) == {}
 
 
-async def test_does_not_enqueue():
+async def test_enqueues_the_actor_at_depth_zero():
     client = FakeWebfingerClient()
-    queue = SpyQueue()
+    queue = asyncio.Queue()
     graph = nx.DiGraph()
 
     await WebfingerHandler(client, queue, graph).handle(WF_JOB)
 
-    assert queue.actors == []
+    assert queue.get_nowait() == ACTOR_JOB
+    assert queue.empty()
 
 
 async def test_lookup_failure_adds_nothing():
     client = FakeWebfingerClient(error=ValueError("no actor link"))
-    queue = SpyQueue()
+    queue = asyncio.Queue()
     graph = nx.DiGraph()
 
     with pytest.raises(ValueError):
         await WebfingerHandler(client, queue, graph).handle(WF_JOB)
 
     assert len(graph) == 0
-    assert queue.actors == []
+    assert queue.empty()

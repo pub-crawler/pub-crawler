@@ -11,3 +11,5 @@ class WebfingerHandler(Handler):
     wf = job['webfinger']
     actor_id = await self.client.get_actor_id(wf)
     self.graph.add_node(actor_id)
+    job = {"job_type": "actor", "actor_id": actor_id, "depth": 0}
+    await self.queue.put(job)
