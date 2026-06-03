@@ -1,9 +1,9 @@
 {
   "@context": "https://www.w3.org/ns/activitystreams",
-  "id": "https://crawler.pub/inbox.as2",
+  "id": "https://crawler.pub/inbox",
   "type": "OrderedCollection",
   "name": "Pub Crawler's inbox",
   "totalItems": 0,
-  "attributedTo": "https://crawler.pub/actor.as2",
-  "to": "https://crawler.pub/actor.as2"
+  "attributedTo": "https://crawler.pub/actor",
+  "to": "https://crawler.pub/actor"
 }

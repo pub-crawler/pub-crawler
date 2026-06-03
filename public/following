@@ -1,9 +1,9 @@
 {
   "@context": "https://www.w3.org/ns/activitystreams",
-  "id": "https://crawler.pub/following.as2",
+  "id": "https://crawler.pub/following",
   "type": "OrderedCollection",
   "name": "Pub Crawler's following",
   "totalItems": 0,
-  "attributedTo": "https://crawler.pub/actor.as2",
+  "attributedTo": "https://crawler.pub/actor",
   "to": "as:Public"
 }

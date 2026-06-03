@@ -1,0 +1,14 @@
+{
+  "@context": "https://www.w3.org/ns/activitystreams",
+  "id": "https://crawler.pub/actor",
+  "type": "Application",
+  "name": "Pub Crawler",
+  "preferredUsername": "bot",
+  "summary": "A bot that follows links across the ActivityPub network.",
+  "inbox": "https://crawler.pub/inbox",
+  "outbox": "https://crawler.pub/outbox",
+  "following": "https://crawler.pub/following",
+  "followers": "https://crawler.pub/followers",
+  "liked": "https://crawler.pub/liked",
+  "to": "as:Public"
+}

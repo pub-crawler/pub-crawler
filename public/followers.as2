@@ -1,9 +1,0 @@
-{
-  "@context": "https://www.w3.org/ns/activitystreams",
-  "id": "https://crawler.pub/followers.as2",
-  "type": "OrderedCollection",
-  "name": "Pub Crawler's followers",
-  "totalItems": 0,
-  "attributedTo": "https://crawler.pub/actor.as2",
-  "to": "as:Public"
-}
