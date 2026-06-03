@@ -10,7 +10,7 @@ the mock handlers stay sync (MockTransport supports that under AsyncClient).
 import httpx
 import pytest
 
-from client import ActivityPubClient
+from pub_crawler.activity_pub_client import ActivityPubClient
 from support import canonical_signing_string, parse_signature, verify_signature
 
 KEY_ID = "https://crawler.pub/actor#main-key"

@@ -13,7 +13,7 @@ import base64
 import pytest
 from cryptography.exceptions import InvalidSignature
 
-from signature import signature_header
+from pub_crawler.signature import signature_header
 from support import canonical_signing_string, parse_signature, verify_signature
 
 KEY_ID = "https://crawler.pub/actor#main-key"

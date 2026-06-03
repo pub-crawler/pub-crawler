@@ -20,7 +20,7 @@ Assumed contract (adjust the tests if the shape differs):
 import httpx
 import pytest
 
-from webfinger import WebfingerClient
+from pub_crawler.webfinger_client import WebfingerClient
 
 ACTOR_URL = "https://crawler.pub/actor"
 LD_URL = "https://crawler.pub/actor-ld"

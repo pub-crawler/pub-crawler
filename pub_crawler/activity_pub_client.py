@@ -1,4 +1,4 @@
-from signature import signature_header
+from pub_crawler.signature import signature_header
 import httpx
 from email.utils import formatdate
 from urllib.parse import urlsplit, urljoin

@@ -1,6 +1,6 @@
 from pathlib import Path
-from webfinger import WebfingerClient
-from client import ActivityPubClient
+from pub_crawler.webfinger_client import WebfingerClient
+from pub_crawler.activity_pub_client import ActivityPubClient
 import asyncio
 
 KEY_ID = "https://crawler.pub/actor#main-key"
