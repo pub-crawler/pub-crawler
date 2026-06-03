@@ -15,8 +15,8 @@ Assumed contract:
 import httpx
 import pytest
 
-import main
-from main import crawl
+import crawl as crawl_module
+from crawl import crawl
 from support import canonical_signing_string, parse_signature, verify_signature
 
 KEY_ID = "https://crawler.pub/actor#main-key"
@@ -130,8 +130,8 @@ async def test_crawl_closes_both_clients(monkeypatch, keypair):
     pem, _ = keypair
     created = []
     spy_ap, spy_wf = make_spy_clients(created)
-    monkeypatch.setattr(main, "ActivityPubClient", spy_ap)
-    monkeypatch.setattr(main, "WebfingerClient", spy_wf)
+    monkeypatch.setattr(crawl_module, "ActivityPubClient", spy_ap)
+    monkeypatch.setattr(crawl_module, "WebfingerClient", spy_wf)
 
     await crawl("user@remote.example", private_key_pem=pem)
 
@@ -143,8 +143,8 @@ async def test_crawl_closes_clients_even_on_error(monkeypatch, keypair):
     pem, _ = keypair
     created = []
     spy_ap, spy_wf = make_spy_clients(created, ap_error=RuntimeError("boom"))
-    monkeypatch.setattr(main, "ActivityPubClient", spy_ap)
-    monkeypatch.setattr(main, "WebfingerClient", spy_wf)
+    monkeypatch.setattr(crawl_module, "ActivityPubClient", spy_ap)
+    monkeypatch.setattr(crawl_module, "WebfingerClient", spy_wf)
 
     with pytest.raises(RuntimeError):
         await crawl("user@remote.example", private_key_pem=pem)
