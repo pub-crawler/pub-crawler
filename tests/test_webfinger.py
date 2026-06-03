@@ -2,8 +2,9 @@
 
 No signing: a single unsigned GET to the webfinger endpoint. get_actor_id
 returns the actor's https URL from the JRD's self link, which the caller then
-hands to the signed ActivityPubClient. Uses httpx.MockTransport so the lookup
-is intercepted in-process.
+hands to the signed ActivityPubClient. The client is async (httpx.AsyncClient),
+so get_actor_id is awaited; httpx.MockTransport intercepts the lookup and the
+sync handlers work fine under AsyncClient.
 
 Assumed contract (adjust the tests if the shape differs):
   WebfingerClient(transport=None).get_actor_id(wf) ->
@@ -59,13 +60,13 @@ def make_client(handler):
 # ---------------------------------------------------------------------------
 
 
-def test_get_actor_id_returns_the_actor_url():
-    assert make_client(serve([AP_SELF])).get_actor_id("bot@crawler.pub") == ACTOR_URL
+async def test_get_actor_id_returns_the_actor_url():
+    assert await make_client(serve([AP_SELF])).get_actor_id("bot@crawler.pub") == ACTOR_URL
 
 
-def test_queries_the_webfinger_endpoint_over_https():
+async def test_queries_the_webfinger_endpoint_over_https():
     seen = {}
-    make_client(serve([AP_SELF], seen)).get_actor_id("bot@crawler.pub")
+    await make_client(serve([AP_SELF], seen)).get_actor_id("bot@crawler.pub")
 
     wf = seen["webfinger"]
     assert wf.url.scheme == "https"
@@ -77,9 +78,9 @@ def test_queries_the_webfinger_endpoint_over_https():
 @pytest.mark.parametrize(
     "wf", ["bot@crawler.pub", "acct:bot@crawler.pub", "@bot@crawler.pub"]
 )
-def test_accepts_common_address_forms(wf):
+async def test_accepts_common_address_forms(wf):
     seen = {}
-    actor_id = make_client(serve([AP_SELF], seen)).get_actor_id(wf)
+    actor_id = await make_client(serve([AP_SELF], seen)).get_actor_id(wf)
 
     assert actor_id == ACTOR_URL
     assert seen["webfinger"].url.host == "crawler.pub"
@@ -91,22 +92,24 @@ def test_accepts_common_address_forms(wf):
 # ---------------------------------------------------------------------------
 
 
-def test_prefers_activity_json_over_ld_json():
+async def test_prefers_activity_json_over_ld_json():
     # Both present (ld+json listed first to prove preference, not order).
-    actor_id = make_client(serve([LD_SELF, AP_SELF])).get_actor_id("bot@crawler.pub")
+    actor_id = await make_client(serve([LD_SELF, AP_SELF])).get_actor_id("bot@crawler.pub")
     assert actor_id == ACTOR_URL
 
 
-def test_falls_back_to_ld_json_with_profile():
+async def test_falls_back_to_ld_json_with_profile():
     # No activity+json link available.
-    actor_id = make_client(serve([LD_SELF, PROFILE_PAGE])).get_actor_id("bot@crawler.pub")
+    actor_id = await make_client(serve([LD_SELF, PROFILE_PAGE])).get_actor_id(
+        "bot@crawler.pub"
+    )
     assert actor_id == LD_URL
 
 
-def test_gives_up_when_no_activitypub_self_link():
+async def test_gives_up_when_no_activitypub_self_link():
     # Only a non-AP link (HTML profile page) — nothing fetchable as an actor.
     with pytest.raises(ValueError):
-        make_client(serve([PROFILE_PAGE])).get_actor_id("bot@crawler.pub")
+        await make_client(serve([PROFILE_PAGE])).get_actor_id("bot@crawler.pub")
 
 
 # ---------------------------------------------------------------------------
@@ -114,10 +117,10 @@ def test_gives_up_when_no_activitypub_self_link():
 # ---------------------------------------------------------------------------
 
 
-def test_unknown_account_raises_http_error():
+async def test_unknown_account_raises_http_error():
     def handler(request):
         # webfinger reports no such account
         return httpx.Response(404, json={})
 
     with pytest.raises(httpx.HTTPStatusError):
-        make_client(handler).get_actor_id("nobody@crawler.pub")
+        await make_client(handler).get_actor_id("nobody@crawler.pub")

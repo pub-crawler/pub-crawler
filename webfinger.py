@@ -9,9 +9,9 @@ MEDIA_TYPES = [
 
 class WebfingerClient:
   def __init__(self, transport=None):
-    self.client = httpx.Client(transport=transport)
+    self.client = httpx.AsyncClient(transport=transport)
 
-  def get_actor_id(self, wf):
+  async def get_actor_id(self, wf):
     resource = self._normalize(wf)
     hostname = wf.split('@')[-1]
     url = f"https://{hostname}/.well-known/webfinger?resource={resource}"
@@ -19,7 +19,7 @@ class WebfingerClient:
       "User-Agent": "crawler.pub/0.1.0 (https://crawler.pub/; evanp@gatech.edu)",
       "Accept": "application/jrd+json;q=1.0,application/json;q=0.5"
     }
-    res = self.client.get(url, headers=headers)
+    res = await self.client.get(url, headers=headers)
     res.raise_for_status()
     doc = res.json()
     if doc["subject"] != resource:
@@ -29,6 +29,9 @@ class WebfingerClient:
           if link.get("type") == media_type and link.get("rel") == "self":
               return link["href"]
     raise ValueError(f"no actor link for {resource}")
+
+  async def aclose(self):
+     await self.client.aclose()
 
   def _normalize(self, wf):
     if wf[0] == "@":

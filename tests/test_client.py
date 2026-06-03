@@ -1,9 +1,10 @@
-"""Tests for ActivityPubClient — signed GET, parse, raise, follow redirects.
+"""Tests for ActivityPubClient — async signed GET, parse, raise, follow redirects.
 
 Uses httpx.MockTransport so nothing touches the network: the mock handler
 receives the actual outgoing httpx.Request, which lets us both verify the
 signature that goes on the wire and drive every response scenario
-deterministically.
+deterministically. The client is async (httpx.AsyncClient), so get() is awaited;
+the mock handlers stay sync (MockTransport supports that under AsyncClient).
 """
 
 import httpx
@@ -39,17 +40,17 @@ def assert_signed(request, public_key):
 # ---------------------------------------------------------------------------
 
 
-def test_get_returns_parsed_json(keypair):
+async def test_get_returns_parsed_json(keypair):
     pem, _ = keypair
     body = {"id": URL, "type": "Person"}
 
     def handler(request):
         return httpx.Response(200, json=body)
 
-    assert make_client(handler, pem).get(URL) == body
+    assert await make_client(handler, pem).get(URL) == body
 
 
-def test_get_sends_a_valid_signature(keypair):
+async def test_get_sends_a_valid_signature(keypair):
     pem, public_key = keypair
     captured = {}
 
@@ -57,7 +58,7 @@ def test_get_sends_a_valid_signature(keypair):
         captured["request"] = request
         return httpx.Response(200, json={})
 
-    make_client(handler, pem).get(URL)
+    await make_client(handler, pem).get(URL)
     request = captured["request"]
 
     # The signed set is exactly (request-target) + host + date + user-agent.
@@ -81,24 +82,24 @@ def test_get_sends_a_valid_signature(keypair):
 
 
 @pytest.mark.parametrize("status", [400, 403, 404, 410, 500, 502, 503])
-def test_get_raises_on_http_error(keypair, status):
+async def test_get_raises_on_http_error(keypair, status):
     pem, _ = keypair
 
     def handler(request):
         return httpx.Response(status, json={})
 
     with pytest.raises(httpx.HTTPStatusError):
-        make_client(handler, pem).get(URL)
+        await make_client(handler, pem).get(URL)
 
 
-def test_get_raises_on_connection_error(keypair):
+async def test_get_raises_on_connection_error(keypair):
     pem, _ = keypair
 
     def handler(request):
         raise httpx.ConnectError("connection refused")
 
     with pytest.raises(httpx.RequestError):
-        make_client(handler, pem).get(URL)
+        await make_client(handler, pem).get(URL)
 
 
 # ---------------------------------------------------------------------------
@@ -106,7 +107,7 @@ def test_get_raises_on_connection_error(keypair):
 # ---------------------------------------------------------------------------
 
 
-def test_follows_redirect_and_re_signs(keypair):
+async def test_follows_redirect_and_re_signs(keypair):
     pem, public_key = keypair
     final = {"id": "https://remote.example/real", "type": "Person"}
     seen = []
@@ -119,7 +120,7 @@ def test_follows_redirect_and_re_signs(keypair):
             )
         return httpx.Response(200, json=final)
 
-    result = make_client(handler, pem).get("https://remote.example/start")
+    result = await make_client(handler, pem).get("https://remote.example/start")
 
     assert result == final
     assert len(seen) == 2
@@ -129,7 +130,7 @@ def test_follows_redirect_and_re_signs(keypair):
     assert seen[1].url.path == "/real"
 
 
-def test_resolves_relative_redirect(keypair):
+async def test_resolves_relative_redirect(keypair):
     pem, _ = keypair
     seen = []
 
@@ -139,14 +140,14 @@ def test_resolves_relative_redirect(keypair):
             return httpx.Response(302, headers={"Location": "/moved"})
         return httpx.Response(200, json={"ok": True})
 
-    result = make_client(handler, pem).get("https://remote.example/start")
+    result = await make_client(handler, pem).get("https://remote.example/start")
 
     assert result == {"ok": True}
     # Relative Location resolved against the original absolute URL.
     assert seen[1] == "https://remote.example/moved"
 
 
-def test_too_many_redirects_raises(keypair):
+async def test_too_many_redirects_raises(keypair):
     pem, _ = keypair
 
     def handler(request):
@@ -157,4 +158,23 @@ def test_too_many_redirects_raises(keypair):
         )
 
     with pytest.raises(httpx.TooManyRedirects):
-        make_client(handler, pem).get("https://remote.example/r?n=0")
+        await make_client(handler, pem).get("https://remote.example/r?n=0")
+
+
+# ---------------------------------------------------------------------------
+# Lifecycle
+# ---------------------------------------------------------------------------
+
+
+async def test_aclose_closes_the_underlying_client(keypair):
+    pem, _ = keypair
+
+    def handler(request):
+        return httpx.Response(200, json={})
+
+    client = make_client(handler, pem)
+    assert client.client.is_closed is False
+
+    await client.aclose()
+
+    assert client.client.is_closed is True
