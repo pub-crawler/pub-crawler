@@ -1,0 +1,10 @@
+{
+  "subject" : "acct:bot@crawler.pub",
+  "links": [
+    {
+       "rel": "self",
+       "type": "application/activity+json",
+       "href": "https://crawler.pub/actor.as2"
+    }
+  ]
+}

@@ -1,9 +1,9 @@
 {
   "@context": "https://www.w3.org/ns/activitystreams",
-  "id": "https://pub-crawler.github.io/liked.jsonld",
+  "id": "https://crawler.pub/liked.as2",
   "type": "OrderedCollection",
   "name": "Pub Crawler's liked",
   "totalItems": 0,
-  "attributedTo": "https://pub-crawler.github.io/actor.jsonld",
+  "attributedTo": "https://crawler.pub/actor.as2",
   "to": "as:Public"
 }

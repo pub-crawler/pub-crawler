@@ -1,9 +1,0 @@
-{
-  "@context": "https://www.w3.org/ns/activitystreams",
-  "id": "https://pub-crawler.github.io/inbox.jsonld",
-  "type": "OrderedCollection",
-  "name": "Pub Crawler's inbox",
-  "totalItems": 0,
-  "attributedTo": "https://pub-crawler.github.io/actor.jsonld",
-  "to": "https://pub-crawler.github.io/actor.jsonld"
-}
