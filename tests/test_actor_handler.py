@@ -1,22 +1,22 @@
-"""Tests for ActorHandler (step 3) — fetch an actor, stamp the node.
+"""Tests for ActorHandler — fetch an actor, stamp the node, enqueue collections.
 
-Step-3 contract: handle fetches the actor via the (signed) ActivityPub client,
-adds/enriches the graph node with scalar metadata + a last_fetch_date stamp, and
-does NOT enqueue collections yet (a later step adds that). Dedup: a node that
-already has a last_fetch_date is skipped (not re-fetched).
+handle fetches the actor via the signed client, adds/enriches the graph node
+with scalar metadata + a last_fetch_date stamp, and enqueues a `collection` job
+for each of followers/following (carrying the actor's depth). It enqueues
+collections UNCONDITIONALLY — every node, including leaves, gets its counts; the
+depth bound that stops page-walking lives in CollectionHandler now, not here.
+Dedup: a node already stamped with last_fetch_date is skipped (no fetch/enqueue).
 
-Pure DI unit tests: a fake async client, a real asyncio.Queue (asserted empty),
-a real networkx DiGraph. No HTTP.
+Pure DI unit tests: a fake async client, a real asyncio.Queue, a real DiGraph.
 
 Assumed contract (flag if different):
-  ActorHandler(activitypub_client, queue, graph, max_depth).handle(job):
-    job = {"job_type": "actor", "actor_id": ..., "depth": ...}  # packed dict
+  ActorHandler(client, queue, graph).handle(job)
+    job = {job_type:'actor', actor_id, depth}
     if node has last_fetch_date -> return (skip)
-    actor = await client.get(actor_id)
-    graph.add_node(actor_id, type=..., preferredUsername=..., last_fetch_date=<iso str>)
-    (no enqueue yet)
-  Node attrs must be GML-serializable scalars (no datetime objects, no nested
-  actor sub-objects like publicKey).
+    actor = await client.get(actor_id); stamp node with scalar metadata + last_fetch_date
+    enqueue a collection job for followers and following:
+      {job_type:'collection', collection_id:<url>, owner_id:actor_id,
+       direction:'followers'|'following', depth:<actor's depth>}
 """
 
 import asyncio
@@ -27,20 +27,37 @@ import pytest
 from pub_crawler.actor_handler import ActorHandler
 
 ACTOR_ID = "https://cosocial.ca/users/evan"
+FOLLOWERS_URL = "https://cosocial.ca/users/evan/followers"
+FOLLOWING_URL = "https://cosocial.ca/users/evan/following"
 ACTOR = {
     "id": ACTOR_ID,
     "type": "Person",
     "preferredUsername": "evan",
     "name": "Evan Prodromou",
-    "followers": "https://cosocial.ca/users/evan/followers",
-    "following": "https://cosocial.ca/users/evan/following",
+    "followers": FOLLOWERS_URL,
+    "following": FOLLOWING_URL,
 }
-MAX_DEPTH = 2
 
 
 def actor_job(actor_id, depth):
-    # Packed job dict, parallel to main.py's webfinger job shape.
     return {"job_type": "actor", "actor_id": actor_id, "depth": depth}
+
+
+def collection_job(collection_id, direction, depth):
+    return {
+        "job_type": "collection",
+        "collection_id": collection_id,
+        "owner_id": ACTOR_ID,
+        "direction": direction,
+        "depth": depth,
+    }
+
+
+def drain(queue):
+    jobs = []
+    while not queue.empty():
+        jobs.append(queue.get_nowait())
+    return jobs
 
 
 class FakeActivityPubClient:
@@ -56,9 +73,13 @@ class FakeActivityPubClient:
         return self.actor
 
 
-def make_handler(client, graph, queue=None, max_depth=MAX_DEPTH):
-    return ActorHandler(client, queue if queue is not None else asyncio.Queue(),
-                        graph, max_depth)
+def make_handler(client, graph, queue):
+    return ActorHandler(client, queue, graph)
+
+
+# ---------------------------------------------------------------------------
+# Fetch + stamp
+# ---------------------------------------------------------------------------
 
 
 async def test_fetches_actor_and_stamps_node():
@@ -72,11 +93,8 @@ async def test_fetches_actor_and_stamps_node():
     node = graph.nodes[ACTOR_ID]
     assert node["type"] == "Person"
     assert node["preferredUsername"] == "evan"
-    # Stamped, and GML-serializable (a string, not a datetime object).
     assert isinstance(node["last_fetch_date"], str)
     assert node["last_fetch_date"]
-    # Step 3 does not enqueue collections yet.
-    assert queue.empty()
 
 
 async def test_enriches_an_existing_bare_node():
@@ -84,9 +102,8 @@ async def test_enriches_an_existing_bare_node():
     graph = nx.DiGraph()
     graph.add_node(ACTOR_ID)  # bare node from WebfingerHandler / PageHandler
 
-    await make_handler(client, graph).handle(actor_job(ACTOR_ID, 1))
+    await make_handler(client, graph, asyncio.Queue()).handle(actor_job(ACTOR_ID, 1))
 
-    # A bare node (no last_fetch_date) is fetched and enriched in place.
     assert client.calls == [ACTOR_ID]
     assert graph.nodes[ACTOR_ID]["type"] == "Person"
     assert "last_fetch_date" in graph.nodes[ACTOR_ID]
@@ -96,20 +113,43 @@ async def test_skips_an_already_fetched_node():
     client = FakeActivityPubClient()
     graph = nx.DiGraph()
     graph.add_node(ACTOR_ID, type="Person", last_fetch_date="2026-06-01T00:00:00")
+    queue = asyncio.Queue()
 
-    await make_handler(client, graph).handle(actor_job(ACTOR_ID, 0))
+    await make_handler(client, graph, queue).handle(actor_job(ACTOR_ID, 0))
 
-    # Already stamped -> no re-fetch.
+    # Already stamped -> no re-fetch, no enqueue.
     assert client.calls == []
+    assert queue.empty()
 
 
 async def test_fetch_failure_propagates_and_leaves_node_unstamped():
     client = FakeActivityPubClient(error=RuntimeError("boom"))
     graph = nx.DiGraph()
-    graph.add_node(ACTOR_ID)  # bare
+    graph.add_node(ACTOR_ID)
+    queue = asyncio.Queue()
 
     with pytest.raises(RuntimeError):
-        await make_handler(client, graph).handle(actor_job(ACTOR_ID, 0))
+        await make_handler(client, graph, queue).handle(actor_job(ACTOR_ID, 0))
 
-    # Not stamped -> not marked fetched (the runner's try/except swallows the raise).
     assert "last_fetch_date" not in graph.nodes[ACTOR_ID]
+    assert queue.empty()
+
+
+# ---------------------------------------------------------------------------
+# Enqueue collections — unconditional (leaves get counts too)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("depth", [0, 5])
+async def test_enqueues_both_collections_carrying_the_actor_depth(depth):
+    client = FakeActivityPubClient()
+    graph = nx.DiGraph()
+    queue = asyncio.Queue()
+
+    await make_handler(client, graph, queue).handle(actor_job(ACTOR_ID, depth))
+
+    jobs = drain(queue)
+    assert len(jobs) == 2
+    # No depth gate here — collections go out at any depth, carrying the actor's.
+    assert collection_job(FOLLOWERS_URL, "followers", depth) in jobs
+    assert collection_job(FOLLOWING_URL, "following", depth) in jobs

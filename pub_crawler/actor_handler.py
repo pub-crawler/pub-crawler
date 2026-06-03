@@ -3,11 +3,10 @@ from datetime import datetime, timezone
 
 class ActorHandler(Handler):
 
-  def __init__(self, client, queue, graph, max_depth):
+  def __init__(self, client, queue, graph):
     self.client = client
     self.queue = queue
     self.graph = graph
-    self.max_depth = max_depth
 
   async def handle(self, job):
     actor_id = job["actor_id"]
@@ -23,8 +22,26 @@ class ActorHandler(Handler):
     self._set_prop(node, json, "name")
     self._set_prop(node, json, "published")
     self._set_prop(node, json, "type")
-    self._set_prop(node, json, "followers")
-    self._set_prop(node, json, "following")
+    followers = json.get("followers", None)
+    if followers:
+      node["followers"] = followers
+      await self.queue.put({
+        "job_type": "collection",
+        "collection_id": followers,
+        "owner_id": actor_id,
+        "direction": "followers",
+        "depth": depth
+      })
+    following = json.get("following", None)
+    if following:
+      node["following"] = following
+      await self.queue.put({
+        "job_type": "collection",
+        "collection_id": following,
+        "owner_id": actor_id,
+        "direction": "following",
+        "depth": depth
+      })
 
   def _set_prop(self, node, json, prop):
     value = json.get(prop, None)

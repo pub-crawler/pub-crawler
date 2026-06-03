@@ -4,20 +4,23 @@ from pub_crawler.webfinger_client import WebfingerClient
 from pub_crawler.webfinger_handler import WebfingerHandler
 from pub_crawler.activity_pub_client import ActivityPubClient
 from pub_crawler.actor_handler import ActorHandler
+from pub_crawler.collection_handler import CollectionHandler
 import networkx as nx
 
 MAX_WORKERS = 3
 MAX_DEPTH = 1
 KEY_ID = 'https://crawler.pub/actor'
 
-async def worker(name, q, wfh, ah):
+async def worker(name, q, wfh, ah, ch):
     while True:
         job = await q.get()
         try:
             if job['job_type'] == 'webfinger':
                 await wfh.handle(job)
-            if job['job_type'] == 'actor':
+            elif job['job_type'] == 'actor':
                 await ah.handle(job)
+            elif job['job_type'] == 'collection':
+                await ch.handle(job)
             else:
                 raise Exception(f"Unrecognized job type {job['job_type']}")
         except Exception:
@@ -31,11 +34,12 @@ async def crawl_graph(inputfile, outputfile, *, transport=None):
     G = nx.DiGraph()
     q = asyncio.Queue()
     wfh = WebfingerHandler(wfc, q, G)
-    ah = ActorHandler(ac, q, G, MAX_DEPTH)
+    ah = ActorHandler(ac, q, G)
+    ch = CollectionHandler(ac, q, G)
 
     workers = []
     for i in range(MAX_WORKERS):
-        workers.append(asyncio.create_task(worker(f'wfw-{i}', q, wfh, ah)))
+        workers.append(asyncio.create_task(worker(f'wfw-{i}', q, wfh, ah, ch)))
 
     try:
 
