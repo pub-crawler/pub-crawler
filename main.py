@@ -23,10 +23,9 @@ async def crawl_graph(inputfile, outputfile, *, transport=None):
     wfq = asyncio.Queue()
     wfh = WebfingerHandler(wfc, None, G)
 
-    tasks = []
+    workers = []
     for i in range(MAX_WORKERS):
-        task = asyncio.create_task(worker(f'wfw-{i}', wfq, wfh))
-        tasks.append(task)
+        workers.append(asyncio.create_task(worker(f'wfw-{i}', wfq, wfh)))
 
     try:
 
@@ -43,10 +42,10 @@ async def crawl_graph(inputfile, outputfile, *, transport=None):
 
         await wfq.join()
 
-        for task in tasks:
-            task.cancel()
+        for w in workers:
+            w.cancel()
 
-        await asyncio.gather(*tasks, return_exceptions=True)
+        await asyncio.gather(*workers, return_exceptions=True)
 
     finally:
         await wfc.aclose()

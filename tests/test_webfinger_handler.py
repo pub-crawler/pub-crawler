@@ -17,6 +17,9 @@ from pub_crawler.webfinger_handler import WebfingerHandler
 ACCT = "evan@cosocial.ca"
 ACTOR_ID = "https://cosocial.ca/users/evan"
 
+# Handlers receive the packed job dict (matches main.py's queue payload).
+WF_JOB = {"job_type": "webfinger", "webfinger": ACCT}
+
 
 class FakeWebfingerClient:
     def __init__(self, result=ACTOR_ID, error=None):
@@ -44,7 +47,7 @@ async def test_adds_the_actor_id_as_a_bare_node():
     queue = SpyQueue()
     graph = nx.DiGraph()
 
-    await WebfingerHandler(client, queue, graph).handle(ACCT)
+    await WebfingerHandler(client, queue, graph).handle(WF_JOB)
 
     assert client.calls == [ACCT]
     assert graph.has_node(ACTOR_ID)
@@ -57,7 +60,7 @@ async def test_does_not_enqueue():
     queue = SpyQueue()
     graph = nx.DiGraph()
 
-    await WebfingerHandler(client, queue, graph).handle(ACCT)
+    await WebfingerHandler(client, queue, graph).handle(WF_JOB)
 
     assert queue.actors == []
 
@@ -68,7 +71,7 @@ async def test_lookup_failure_adds_nothing():
     graph = nx.DiGraph()
 
     with pytest.raises(ValueError):
-        await WebfingerHandler(client, queue, graph).handle(ACCT)
+        await WebfingerHandler(client, queue, graph).handle(WF_JOB)
 
     assert len(graph) == 0
     assert queue.actors == []

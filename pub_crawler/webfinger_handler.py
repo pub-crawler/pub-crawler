@@ -7,7 +7,7 @@ class WebfingerHandler(Handler):
     self.queue = queue
     self.graph = graph
 
-  async def handle(self, task):
-    wf = task['webfinger']
+  async def handle(self, job):
+    wf = job['webfinger']
     actor_id = await self.client.get_actor_id(wf)
     self.graph.add_node(actor_id)
