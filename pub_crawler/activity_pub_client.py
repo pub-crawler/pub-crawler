@@ -13,6 +13,8 @@ class ActivityPubClient:
     self.private_key_pem = private_key_pem
     self.general = general
     self.paged = paged
+    if transport is None:
+      transport = httpx.AsyncHTTPTransport(retries=3)
     self.client = httpx.AsyncClient(transport=transport)
 
   async def get(self, url):

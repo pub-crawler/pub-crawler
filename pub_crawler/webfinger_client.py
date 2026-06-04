@@ -10,6 +10,8 @@ MEDIA_TYPES = [
 class WebfingerClient:
   def __init__(self, general, transport=None):
     self.general = general
+    if transport is None:
+      transport = httpx.AsyncHTTPTransport(retries=3)
     self.client = httpx.AsyncClient(transport=transport)
 
   async def get_actor_id(self, wf):
