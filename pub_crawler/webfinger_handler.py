@@ -3,8 +3,8 @@ from pub_crawler.handler import Handler
 class WebfingerHandler(Handler):
 
   def __init__(self, client, queue, graph):
+    super().__init__(queue)
     self.client = client
-    self.queue = queue
     self.graph = graph
 
   async def handle(self, job):
@@ -12,4 +12,4 @@ class WebfingerHandler(Handler):
     actor_id = await self.client.get_actor_id(wf)
     self.graph.add_node(actor_id)
     job = {"job_type": "actor", "actor_id": actor_id, "depth": 0}
-    await self.queue.put(job)
+    await self.enqueue(job)

@@ -3,8 +3,8 @@ from pub_crawler.handler import Handler
 class CollectionHandler(Handler):
 
   def __init__(self, client, queue, graph, max_depth):
+    super().__init__(queue)
     self.client = client
-    self.queue = queue
     self.graph = graph
     self.max_depth = max_depth
 
@@ -21,7 +21,7 @@ class CollectionHandler(Handler):
     if depth < self.max_depth:
       first = json.get("first", None)
       if first:
-        await self.queue.put({
+        await self.enqueue({
           "job_type": "page",
           "page_id": first,
           "owner_id": owner_id,
@@ -45,7 +45,7 @@ class CollectionHandler(Handler):
                   self.graph.add_edge(id, owner_id)
                 elif direction == "following":
                   self.graph.add_edge(owner_id, id)
-                await self.queue.put({
+                await self.enqueue({
                   "job_type": "actor",
                   "actor_id": id,
                   "depth": depth + 1
