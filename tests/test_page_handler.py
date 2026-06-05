@@ -75,17 +75,25 @@ def drain(queue):
     return jobs
 
 
+NA_RESULT = 4242
+
+
 class FakeActivityPubClient:
     def __init__(self, doc=None, error=None):
         self.doc = doc
         self.error = error
         self.calls = []
+        self.na_calls = []
 
     async def get(self, url):
         self.calls.append(url)
         if self.error is not None:
             raise self.error
         return self.doc
+
+    def next_available(self, url):
+        self.na_calls.append(url)
+        return NA_RESULT
 
 
 # ---------------------------------------------------------------------------
@@ -178,3 +186,14 @@ async def test_no_next_means_no_page_job():
 
     page_jobs = [j for j in drain(queue) if j["job_type"] == "page"]
     assert page_jobs == []
+
+
+def test_next_available_delegates_to_the_client_for_the_page_url():
+    client = FakeActivityPubClient()
+    handler = PageHandler(client, asyncio.Queue(), nx.DiGraph())
+
+    result = handler.next_available(input_job())
+
+    # It HANDLES page jobs, so it asks its client about the page URL it'll fetch.
+    assert result == NA_RESULT
+    assert client.na_calls == [PAGE_ID]

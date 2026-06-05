@@ -13,3 +13,6 @@ class WebfingerHandler(Handler):
     self.graph.add_node(actor_id)
     job = {"job_type": "actor", "actor_id": actor_id, "depth": 0}
     await self.enqueue(job)
+
+  def next_available(self, job):
+    return self.client.next_available(job['webfinger'])

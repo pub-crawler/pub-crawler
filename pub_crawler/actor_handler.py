@@ -43,6 +43,9 @@ class ActorHandler(Handler):
         "depth": depth
       })
 
+  def next_available(self, job):
+    return self.client.next_available(job['actor_id'])
+
   def _set_prop(self, node, json, prop):
     value = json.get(prop, None)
     if value:

@@ -50,3 +50,6 @@ class PageHandler(Handler):
         "actor_id": id,
         "depth": depth + 1
       })
+
+  def next_available(self, job):
+    return self.client.next_available(job['page_id'])

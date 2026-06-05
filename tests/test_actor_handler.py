@@ -60,17 +60,25 @@ def drain(queue):
     return jobs
 
 
+NA_RESULT = 4242
+
+
 class FakeActivityPubClient:
     def __init__(self, actor=ACTOR, error=None):
         self.actor = actor
         self.error = error
         self.calls = []
+        self.na_calls = []
 
     async def get(self, url):
         self.calls.append(url)
         if self.error is not None:
             raise self.error
         return self.actor
+
+    def next_available(self, url):
+        self.na_calls.append(url)
+        return NA_RESULT
 
 
 def make_handler(client, graph, queue):
@@ -153,3 +161,14 @@ async def test_enqueues_both_collections_carrying_the_actor_depth(depth):
     # No depth gate here — collections go out at any depth, carrying the actor's.
     assert collection_job(FOLLOWERS_URL, "followers", depth) in jobs
     assert collection_job(FOLLOWING_URL, "following", depth) in jobs
+
+
+def test_next_available_delegates_to_the_client_for_the_actor_url():
+    client = FakeActivityPubClient()
+    handler = make_handler(client, nx.DiGraph(), asyncio.Queue())
+
+    result = handler.next_available(actor_job(ACTOR_ID, 0))
+
+    # It HANDLES actor jobs, so it asks its client about the actor URL it'll fetch.
+    assert result == NA_RESULT
+    assert client.na_calls == [ACTOR_ID]

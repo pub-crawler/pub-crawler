@@ -51,6 +51,9 @@ class CollectionHandler(Handler):
                   "depth": depth + 1
                 })
 
+  def next_available(self, job):
+    return self.client.next_available(job['collection_id'])
+
   def _set_prop(self, node, json, prop, prop2):
     value = json.get(prop2, None)
     if value:

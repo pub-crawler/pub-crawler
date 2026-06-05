@@ -97,17 +97,25 @@ def drain(queue):
     return jobs
 
 
+NA_RESULT = 4242
+
+
 class FakeActivityPubClient:
     def __init__(self, doc=None, error=None):
         self.doc = doc
         self.error = error
         self.calls = []
+        self.na_calls = []
 
     async def get(self, url):
         self.calls.append(url)
         if self.error is not None:
             raise self.error
         return self.doc
+
+    def next_available(self, url):
+        self.na_calls.append(url)
+        return NA_RESULT
 
 
 def make_handler(client, queue, graph, max_depth=MAX_DEPTH):
@@ -323,3 +331,14 @@ async def test_prefers_pagination_when_both_first_and_inline_present():
     ]
     assert [j for j in jobs if j["job_type"] == "actor"] == []
     assert not graph.has_edge(MEMBER_A, OWNER_ID)
+
+
+def test_next_available_delegates_to_the_client_for_the_collection_url():
+    client = FakeActivityPubClient()
+    handler = make_handler(client, asyncio.Queue(), nx.DiGraph())
+
+    result = handler.next_available(collection_job(FOLLOWERS_ID, "followers", 0))
+
+    # It HANDLES collection jobs, so it asks its client about the collection URL.
+    assert result == NA_RESULT
+    assert client.na_calls == [FOLLOWERS_ID]

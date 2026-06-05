@@ -8,3 +8,6 @@ class Handler:
 
   async def enqueue(self, job):
     return await self.queue.put(job)
+
+  def next_available(self, job):
+    return float("inf")
