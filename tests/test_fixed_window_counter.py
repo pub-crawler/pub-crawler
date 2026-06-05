@@ -108,3 +108,71 @@ async def test_concurrent_acquirers_respect_the_limit():
 
     # Two get tokens in window 0 (t=0); the third must wait for window 1 (t=1000).
     assert sorted(completed_at) == [0, 0, 1000]
+
+
+# ---------------------------------------------------------------------------
+# next_available(origin): epoch-ms when a token is next free, WITHOUT consuming
+# one. Sync (no await). "free now" returns now(), so ready <=> result <= now()
+# and the scheduler's wait is max(0, next_available - now()). The throttle-aware
+# queue keys its ordering on this.
+# ---------------------------------------------------------------------------
+
+
+async def test_next_available_is_now_for_an_unseen_origin():
+    clock = FakeClock(0)
+    fwc = counter(2, 1000, clock)
+    # Never touched -> full budget -> callable right now.
+    assert fwc.next_available(ORIGIN) == clock.now()
+
+
+async def test_next_available_is_now_while_tokens_remain():
+    clock = FakeClock(0)
+    fwc = counter(2, 1000, clock)
+    await fwc.acquire(ORIGIN)  # 1 of 2 spent, 1 left
+    assert fwc.next_available(ORIGIN) == clock.now()
+
+
+async def test_next_available_is_next_boundary_when_exhausted():
+    clock = FakeClock(0)
+    fwc = counter(2, 1000, clock)
+    await fwc.acquire(ORIGIN)
+    await fwc.acquire(ORIGIN)  # window 0 fully spent
+    assert fwc.next_available(ORIGIN) == 1000  # frees at the boundary, not now
+
+
+async def test_next_available_uses_the_aligned_boundary_mid_window():
+    clock = FakeClock(500)  # 500ms into [0, 1000)
+    fwc = counter(1, 1000, clock)
+    await fwc.acquire(ORIGIN)  # the window's one token spent
+    assert fwc.next_available(ORIGIN) == 1000  # aligned boundary, not 500 + 1000
+
+
+async def test_next_available_is_ready_again_after_the_window_rolls():
+    clock = FakeClock(0)
+    fwc = counter(1, 1000, clock)
+    await fwc.acquire(ORIGIN)
+    assert fwc.next_available(ORIGIN) == 1000  # blocked: in the future
+
+    clock.t = 1000  # time passes into window 1
+    assert fwc.next_available(ORIGIN) == clock.now()  # ready: <= now()
+
+
+async def test_next_available_does_not_consume():
+    clock = FakeClock(0)
+    fwc = counter(2, 1000, clock)
+
+    for _ in range(5):  # peeking can't spend tokens...
+        fwc.next_available(ORIGIN)
+
+    await fwc.acquire(ORIGIN)  # ...so both are still acquirable without sleeping
+    await fwc.acquire(ORIGIN)
+    assert clock.t == 0
+
+
+async def test_next_available_is_per_origin():
+    clock = FakeClock(0)
+    fwc = counter(1, 1000, clock)
+    await fwc.acquire(ORIGIN_A)  # exhaust A's window
+
+    assert fwc.next_available(ORIGIN_A) == 1000  # A blocked till the boundary
+    assert fwc.next_available(ORIGIN_B) == clock.now()  # B untouched, ready now
