@@ -41,6 +41,11 @@ class WebfingerClient:
     async def aclose(self):
         await self.client.aclose()
 
+    def next_available(self, wf):
+        hostname = wf.split("@")[-1]
+        origin = f"https://{hostname}"
+        return self.general.next_available(origin)
+
     def _normalize(self, wf):
         if wf[0] == "@":
             return "acct:" + wf[1:]

@@ -155,3 +155,41 @@ async def test_acquires_general_before_fetching():
     # One acquire, keyed by origin (scheme://host), and it lands BEFORE the GET.
     assert general.calls == ["https://crawler.pub"]
     assert log[0] == ("acquire", "https://crawler.pub")
+
+
+# ---------------------------------------------------------------------------
+# next_available(webfinger): when the host's general budget next allows a lookup
+# ---------------------------------------------------------------------------
+
+
+class FakeCounter:
+    """Records the origin passed to next_available; returns a fixed answer."""
+
+    def __init__(self, result):
+        self.result = result
+        self.origins = []
+
+    def next_available(self, origin):
+        self.origins.append(origin)
+        return self.result
+
+
+def counter_client(counter):
+    handler = lambda request: httpx.Response(200, json={})  # never called here
+    return WebfingerClient(counter, transport=httpx.MockTransport(handler))
+
+
+@pytest.mark.parametrize(
+    "wf", ["bot@crawler.pub", "acct:bot@crawler.pub", "@bot@crawler.pub"]
+)
+def test_next_available_delegates_to_general_keyed_by_host(wf):
+    counter = FakeCounter(result=4242)
+    client = counter_client(counter)
+
+    result = client.next_available(wf)
+
+    # Takes a webfinger (not a URL), sync (no await). Derives the host from the
+    # acct, keys the general counter by that origin (scheme://host), and passes
+    # the counter's answer straight through.
+    assert result == 4242
+    assert counter.origins == ["https://crawler.pub"]
