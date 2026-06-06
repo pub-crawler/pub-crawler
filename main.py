@@ -58,7 +58,7 @@ async def crawl_graph(inputfile, outputfile, *, transport=None):
                 job = {"job_type": "webfinger", "webfinger": wf}
                 await dispatcher.enqueue(job)
 
-        await q.join()
+        await dispatcher.join()
 
         for w in workers:
             w.cancel()

@@ -40,6 +40,9 @@ class Dispatcher:
     def done(self, job):
         self.queue.task_done()
 
+    async def join(self):
+        await self.queue.join()
+
     def _get_handler(self, job):
         handler = self._handlers.get(job["job_type"], None)
         if not handler:

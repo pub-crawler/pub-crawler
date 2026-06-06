@@ -129,3 +129,32 @@ async def test_get_breaks_next_available_ties_by_insertion_order():
     # a missing tiebreaker would raise TypeError here.
     assert (await dis.get())["tag"] == "first"
     assert (await dis.get())["tag"] == "second"
+
+
+# ---------------------------------------------------------------------------
+# join(): await until the queue is fully drained (termination)
+# ---------------------------------------------------------------------------
+
+
+async def test_join_returns_once_the_queue_is_drained():
+    h = FakeHandler()
+    dis = Dispatcher(asyncio.PriorityQueue())
+    dis.set_handler("actor", h)
+
+    await dis.enqueue(actor_job())
+    await dis.enqueue(actor_job())
+
+    # A worker drains the queue: get -> dispatch -> done (per-job task_done).
+    async def drain():
+        for _ in range(2):
+            job = await dis.get()
+            await dis.dispatch(job)
+            dis.done(job)
+
+    worker = asyncio.create_task(drain())
+
+    # join() must block until both jobs are done, then return (timeout guards a hang).
+    await asyncio.wait_for(dis.join(), timeout=1.0)
+    await worker
+
+    assert len(h.handled) == 2
