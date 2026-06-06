@@ -7,7 +7,7 @@ depth+1. If the page has a next, it enqueues a page job for it.
 A member may be an id string or an embedded actor object; either way we use its
 id. Members are added as BARE endpoint nodes — ActorHandler enriches them later.
 
-Pure DI unit tests: a fake async client, a real asyncio.Queue, a real DiGraph.
+Pure DI unit tests: a fake async client, a recording FakeDispatcher, a DiGraph.
 
 Assumed contract (flag if different):
   PageHandler(client, dispatcher, graph).handle(job)
@@ -20,8 +20,6 @@ Assumed contract (flag if different):
     if page.next:
         enqueue {job_type:'page', page_id:next, owner_id, direction, depth: job.depth}
 """
-
-import asyncio
 
 import networkx as nx
 import pytest
@@ -69,13 +67,6 @@ def next_page_job(next_id):
     }
 
 
-def drain(queue):
-    jobs = []
-    while not queue.empty():
-        jobs.append(queue.get_nowait())
-    return jobs
-
-
 NA_RESULT = 4242
 
 
@@ -104,11 +95,11 @@ class FakeActivityPubClient:
 
 async def test_enqueues_an_actor_job_per_ordered_item():
     client = FakeActivityPubClient(doc=page_doc([ITEM_A, ITEM_B]))
-    queue = asyncio.Queue()
+    dis = FakeDispatcher()
 
-    await PageHandler(client, FakeDispatcher(queue), nx.DiGraph()).handle(input_job())
+    await PageHandler(client, dis, nx.DiGraph()).handle(input_job())
 
-    actor_jobs = [j for j in drain(queue) if j["job_type"] == "actor"]
+    actor_jobs = [j for j in dis.enqueued if j["job_type"] == "actor"]
     assert len(actor_jobs) == 2
     # Members are one hop further out than the page -> depth + 1.
     assert actor_job(ITEM_A, DEPTH + 1) in actor_jobs
@@ -117,23 +108,23 @@ async def test_enqueues_an_actor_job_per_ordered_item():
 
 async def test_handles_plain_items_key():
     client = FakeActivityPubClient(doc=page_doc([ITEM_A], items_key="items"))
-    queue = asyncio.Queue()
+    dis = FakeDispatcher()
 
-    await PageHandler(client, FakeDispatcher(queue), nx.DiGraph()).handle(input_job())
+    await PageHandler(client, dis, nx.DiGraph()).handle(input_job())
 
-    actor_jobs = [j for j in drain(queue) if j["job_type"] == "actor"]
+    actor_jobs = [j for j in dis.enqueued if j["job_type"] == "actor"]
     assert actor_jobs == [actor_job(ITEM_A, DEPTH + 1)]
 
 
 async def test_handles_embedded_actor_objects():
     items = [{"id": ITEM_A, "type": "Person", "preferredUsername": "a"}]
     client = FakeActivityPubClient(doc=page_doc(items))
-    queue = asyncio.Queue()
+    dis = FakeDispatcher()
     graph = nx.DiGraph()
 
-    await PageHandler(client, FakeDispatcher(queue), graph).handle(input_job())
+    await PageHandler(client, dis, graph).handle(input_job())
 
-    actor_jobs = [j for j in drain(queue) if j["job_type"] == "actor"]
+    actor_jobs = [j for j in dis.enqueued if j["job_type"] == "actor"]
     assert actor_jobs == [actor_job(ITEM_A, DEPTH + 1)]  # uses the embedded id
     assert graph.has_edge(ITEM_A, OWNER_ID)  # ...and so does the edge
 
@@ -152,10 +143,9 @@ async def test_handles_embedded_actor_objects():
 )
 async def test_adds_a_follow_edge_per_member(direction, edge):
     client = FakeActivityPubClient(doc=page_doc([ITEM_A]))
-    queue = asyncio.Queue()
     graph = nx.DiGraph()
 
-    await PageHandler(client, FakeDispatcher(queue), graph).handle(input_job(direction))
+    await PageHandler(client, FakeDispatcher(), graph).handle(input_job(direction))
 
     assert graph.has_edge(*edge)
     assert graph.number_of_edges() == 1
@@ -170,28 +160,28 @@ async def test_adds_a_follow_edge_per_member(direction, edge):
 
 async def test_enqueues_next_as_a_page_job():
     client = FakeActivityPubClient(doc=page_doc([ITEM_A], next_id=NEXT_ID))
-    queue = asyncio.Queue()
+    dis = FakeDispatcher()
 
-    await PageHandler(client, FakeDispatcher(queue), nx.DiGraph()).handle(input_job())
+    await PageHandler(client, dis, nx.DiGraph()).handle(input_job())
 
-    page_jobs = [j for j in drain(queue) if j["job_type"] == "page"]
+    page_jobs = [j for j in dis.enqueued if j["job_type"] == "page"]
     # Same owner/direction/depth — it's more of the same collection.
     assert page_jobs == [next_page_job(NEXT_ID)]
 
 
 async def test_no_next_means_no_page_job():
     client = FakeActivityPubClient(doc=page_doc([ITEM_A]))  # no next
-    queue = asyncio.Queue()
+    dis = FakeDispatcher()
 
-    await PageHandler(client, FakeDispatcher(queue), nx.DiGraph()).handle(input_job())
+    await PageHandler(client, dis, nx.DiGraph()).handle(input_job())
 
-    page_jobs = [j for j in drain(queue) if j["job_type"] == "page"]
+    page_jobs = [j for j in dis.enqueued if j["job_type"] == "page"]
     assert page_jobs == []
 
 
 def test_next_available_delegates_to_the_client_for_the_page_url():
     client = FakeActivityPubClient()
-    handler = PageHandler(client, FakeDispatcher(asyncio.Queue()), nx.DiGraph())
+    handler = PageHandler(client, FakeDispatcher(), nx.DiGraph())
 
     result = handler.next_available(input_job())
 

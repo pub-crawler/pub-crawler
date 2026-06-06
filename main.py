@@ -10,6 +10,7 @@ from pub_crawler.fixed_window_counter import FixedWindowCounter
 from pub_crawler.dispatcher import Dispatcher
 import networkx as nx
 import logging
+import redis.asyncio
 
 MAX_WORKERS = 25
 MAX_DEPTH = 1
@@ -28,15 +29,14 @@ async def worker(name, dispatcher):
         dispatcher.done(job)
 
 
-async def crawl_graph(inputfile, outputfile, *, transport=None):
+async def crawl_graph(inputfile, outputfile, *, transport=None, redis=None):
     private_key_pem = Path("private.pem").read_text()  # CLI default
     general = FixedWindowCounter(300, 5 * 60 * 1000)
     paged = FixedWindowCounter(300, 15 * 60 * 1000)
     wfc = WebfingerClient(general, transport=transport)
     ac = ActivityPubClient(KEY_ID, private_key_pem, general, paged, transport=transport)
     G = nx.DiGraph()
-    q = asyncio.PriorityQueue()
-    dispatcher = Dispatcher(q)
+    dispatcher = Dispatcher(redis)
     dispatcher.set_handler("webfinger", WebfingerHandler(wfc, dispatcher, G))
     dispatcher.set_handler("actor", ActorHandler(ac, dispatcher, G))
     dispatcher.set_handler(
@@ -82,4 +82,8 @@ if __name__ == "__main__":
 
     input = sys.argv[1]
     output = sys.argv[2]
-    asyncio.run(crawl_graph(input, output))
+    redis_url = sys.argv[3]
+
+    r = redis.asyncio.Redis.from_url(redis_url)
+
+    asyncio.run(crawl_graph(input, output, redis=r))

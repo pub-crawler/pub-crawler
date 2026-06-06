@@ -19,8 +19,14 @@ Assumptions to flag if the shape differs:
 import asyncio
 
 import pytest
+from fakeredis import FakeAsyncRedis, FakeServer
 
 from pub_crawler.dispatcher import Dispatcher
+
+
+def fake_redis():
+    # Fresh, isolated in-memory async Redis (its own server) per call.
+    return FakeAsyncRedis(server=FakeServer())
 
 
 class FakeHandler:
@@ -48,7 +54,7 @@ def actor_job():
 
 async def test_dispatch_routes_to_the_handler_for_the_job_type():
     ah, wfh = FakeHandler(), FakeHandler()
-    dis = Dispatcher(asyncio.Queue())
+    dis = Dispatcher(fake_redis())
     dis.set_handler("actor", ah)
     dis.set_handler("webfinger", wfh)
 
@@ -60,7 +66,7 @@ async def test_dispatch_routes_to_the_handler_for_the_job_type():
 
 
 async def test_dispatch_unknown_job_type_raises():
-    dis = Dispatcher(asyncio.Queue())
+    dis = Dispatcher(fake_redis())
     with pytest.raises(Exception):
         await dis.dispatch({"job_type": "mystery"})
 
@@ -72,7 +78,7 @@ async def test_dispatch_unknown_job_type_raises():
 
 async def test_enqueue_consults_the_handler_and_queues_the_job():
     ah = FakeHandler(na=4242)
-    dis = Dispatcher(asyncio.PriorityQueue())
+    dis = Dispatcher(fake_redis())
     dis.set_handler("actor", ah)
 
     job = actor_job()
@@ -87,7 +93,7 @@ async def test_enqueue_consults_the_handler_and_queues_the_job():
 async def test_enqueue_uses_the_handler_for_the_jobs_own_type():
     ah = FakeHandler(na=100)
     ch = FakeHandler(na=500)
-    dis = Dispatcher(asyncio.PriorityQueue())
+    dis = Dispatcher(fake_redis())
     dis.set_handler("actor", ah)
     dis.set_handler("collection", ch)
 
@@ -107,7 +113,7 @@ async def test_enqueue_uses_the_handler_for_the_jobs_own_type():
 
 async def test_get_returns_jobs_in_next_available_order():
     h = FakeHandler()
-    dis = Dispatcher(asyncio.PriorityQueue())
+    dis = Dispatcher(fake_redis())
     dis.set_handler("actor", h)
 
     for na in (300, 100, 200):
@@ -119,7 +125,7 @@ async def test_get_returns_jobs_in_next_available_order():
 
 async def test_get_breaks_next_available_ties_by_insertion_order():
     h = FakeHandler(na=100)  # every job gets the same next_available
-    dis = Dispatcher(asyncio.PriorityQueue())
+    dis = Dispatcher(fake_redis())
     dis.set_handler("actor", h)
 
     await dis.enqueue({"job_type": "actor", "tag": "first"})
@@ -138,7 +144,7 @@ async def test_get_breaks_next_available_ties_by_insertion_order():
 
 async def test_join_returns_once_the_queue_is_drained():
     h = FakeHandler()
-    dis = Dispatcher(asyncio.PriorityQueue())
+    dis = Dispatcher(fake_redis())
     dis.set_handler("actor", h)
 
     await dis.enqueue(actor_job())

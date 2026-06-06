@@ -9,12 +9,14 @@ dependencies = [
     "fastapi>=0.136.3",
     "httpx>=0.28.1",
     "networkx>=3.6.1",
+    "redis>=8.0.0",
     "uvicorn>=0.48.0",
 ]
 
 [dependency-groups]
 dev = [
     "black>=26.5.1",
+    "fakeredis>=2.36.0",
     "pytest>=9.0.3",
     "pytest-asyncio>=1.4.0",
 ]

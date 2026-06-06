@@ -6,7 +6,7 @@ to an actor id, builds a graph of those nodes, and writes it to the output path
 serves the webfinger lookups; the graph is read back with networkx to assert.
 
 Assumed contract:
-  async crawl_graph(input_filename, output_filename, *, transport=None)
+  async crawl_graph(input_filename, output_filename, *, transport=None, redis=None)
     -> writes a GML graph whose nodes are the resolved actor ids
   Blank/whitespace lines are ignored; a seed that fails to resolve is skipped
   (the run continues); the output file is created or replaced.
@@ -14,11 +14,17 @@ Assumed contract:
 
 import httpx
 import networkx as nx
+from fakeredis import FakeAsyncRedis, FakeServer
 
 from main import crawl_graph
 
 EVAN = "https://cosocial.ca/users/evan"
 ALICE = "https://example.social/users/alice"
+
+
+def fake_redis():
+    # Fresh, isolated in-memory async Redis (its own server) per call.
+    return FakeAsyncRedis(server=FakeServer())
 
 
 def webfinger_handler(failing=()):
@@ -51,7 +57,10 @@ async def test_writes_resolved_nodes_to_gml(tmp_path):
     out = tmp_path / "graph.gml"
 
     await crawl_graph(
-        str(seeds), str(out), transport=httpx.MockTransport(webfinger_handler())
+        str(seeds),
+        str(out),
+        transport=httpx.MockTransport(webfinger_handler()),
+        redis=fake_redis(),
     )
 
     graph = nx.read_gml(str(out))
@@ -64,7 +73,10 @@ async def test_ignores_blank_and_whitespace_lines(tmp_path):
     out = tmp_path / "graph.gml"
 
     await crawl_graph(
-        str(seeds), str(out), transport=httpx.MockTransport(webfinger_handler())
+        str(seeds),
+        str(out),
+        transport=httpx.MockTransport(webfinger_handler()),
+        redis=fake_redis(),
     )
 
     graph = nx.read_gml(str(out))
@@ -77,7 +89,12 @@ async def test_a_failing_seed_is_skipped_not_fatal(tmp_path):
     out = tmp_path / "graph.gml"
     handler = webfinger_handler(failing={"nobody@example.social"})
 
-    await crawl_graph(str(seeds), str(out), transport=httpx.MockTransport(handler))
+    await crawl_graph(
+        str(seeds),
+        str(out),
+        transport=httpx.MockTransport(handler),
+        redis=fake_redis(),
+    )
 
     graph = nx.read_gml(str(out))
     assert set(graph.nodes) == {EVAN}
@@ -90,7 +107,10 @@ async def test_replaces_an_existing_output_file(tmp_path):
     seeds.write_text("evan@cosocial.ca\n")
 
     await crawl_graph(
-        str(seeds), str(out), transport=httpx.MockTransport(webfinger_handler())
+        str(seeds),
+        str(out),
+        transport=httpx.MockTransport(webfinger_handler()),
+        redis=fake_redis(),
     )
 
     graph = nx.read_gml(str(out))

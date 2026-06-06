@@ -14,10 +14,10 @@ Two collection shapes are handled:
     PageHandler's per-member logic. Both member-walks are gated by
     depth < max_depth, so a leaf collection is counted but not expanded.
 
-Pure DI unit tests: a fake async client, a real asyncio.Queue, a real DiGraph.
+Pure DI unit tests: a fake async client, a recording FakeDispatcher, a DiGraph.
 
 Assumed contract (flag if different):
-  CollectionHandler(client, queue, graph, max_depth).handle(job)
+  CollectionHandler(client, dispatcher, graph, max_depth).handle(job)
     job = {job_type:'collection', collection_id, owner_id, direction, depth}
     coll = await client.get(collection_id)
     graph.nodes[owner_id][f"{direction}_count"] = coll["totalItems"]
@@ -29,8 +29,6 @@ Assumed contract (flag if different):
           add node, add edge (followers: member->owner, following: owner->member),
           enqueue {job_type:'actor', actor_id, depth+1}
 """
-
-import asyncio
 
 import networkx as nx
 import pytest
@@ -91,13 +89,6 @@ def actor_job(actor_id, depth):
     return {"job_type": "actor", "actor_id": actor_id, "depth": depth}
 
 
-def drain(queue):
-    jobs = []
-    while not queue.empty():
-        jobs.append(queue.get_nowait())
-    return jobs
-
-
 NA_RESULT = 4242
 
 
@@ -119,8 +110,8 @@ class FakeActivityPubClient:
         return NA_RESULT
 
 
-def make_handler(client, queue, graph, max_depth=MAX_DEPTH):
-    return CollectionHandler(client, FakeDispatcher(queue), graph, max_depth)
+def make_handler(client, dispatcher, graph, max_depth=MAX_DEPTH):
+    return CollectionHandler(client, dispatcher, graph, max_depth)
 
 
 # ---------------------------------------------------------------------------
@@ -134,11 +125,11 @@ def make_handler(client, queue, graph, max_depth=MAX_DEPTH):
 )
 async def test_saves_count_on_owner_node_keyed_by_direction(direction, collection_id):
     client = FakeActivityPubClient(doc=collection(collection_id))
-    queue = asyncio.Queue()
+    dis = FakeDispatcher()
     graph = nx.DiGraph()
     graph.add_node(OWNER_ID)
 
-    await make_handler(client, queue, graph).handle(
+    await make_handler(client, dis, graph).handle(
         collection_job(collection_id, direction, 0)
     )
 
@@ -148,11 +139,11 @@ async def test_saves_count_on_owner_node_keyed_by_direction(direction, collectio
 
 async def test_count_does_not_clobber_owner_metadata():
     client = FakeActivityPubClient(doc=collection(FOLLOWERS_ID))
-    queue = asyncio.Queue()
+    dis = FakeDispatcher()
     graph = nx.DiGraph()
     graph.add_node(OWNER_ID, type="Person", followers=FOLLOWERS_ID)
 
-    await make_handler(client, queue, graph).handle(
+    await make_handler(client, dis, graph).handle(
         collection_job(FOLLOWERS_ID, "followers", 0)
     )
 
@@ -164,16 +155,16 @@ async def test_count_does_not_clobber_owner_metadata():
 
 async def test_fetch_failure_propagates():
     client = FakeActivityPubClient(error=RuntimeError("boom"))
-    queue = asyncio.Queue()
+    dis = FakeDispatcher()
     graph = nx.DiGraph()
     graph.add_node(OWNER_ID)
 
     with pytest.raises(RuntimeError):
-        await make_handler(client, queue, graph).handle(
+        await make_handler(client, dis, graph).handle(
             collection_job(FOLLOWERS_ID, "followers", 0)
         )
 
-    assert queue.empty()
+    assert dis.enqueued == []
 
 
 # ---------------------------------------------------------------------------
@@ -183,33 +174,33 @@ async def test_fetch_failure_propagates():
 
 async def test_enqueues_the_first_page_below_max_depth():
     client = FakeActivityPubClient(doc=collection(FOLLOWERS_ID))
-    queue = asyncio.Queue()
+    dis = FakeDispatcher()
     graph = nx.DiGraph()
     graph.add_node(OWNER_ID)
 
     # depth 0 < MAX_DEPTH
-    await make_handler(client, queue, graph).handle(
+    await make_handler(client, dis, graph).handle(
         collection_job(FOLLOWERS_ID, "followers", 0)
     )
 
-    page_jobs = [j for j in drain(queue) if j["job_type"] == "page"]
+    page_jobs = [j for j in dis.enqueued if j["job_type"] == "page"]
     # First page carries the collection's owner/direction/depth.
     assert page_jobs == [page_job(f"{FOLLOWERS_ID}?page=1", "followers", 0)]
 
 
 async def test_does_not_enqueue_the_page_at_max_depth():
     client = FakeActivityPubClient(doc=collection(FOLLOWERS_ID))
-    queue = asyncio.Queue()
+    dis = FakeDispatcher()
     graph = nx.DiGraph()
     graph.add_node(OWNER_ID)
 
-    await make_handler(client, queue, graph).handle(
+    await make_handler(client, dis, graph).handle(
         collection_job(FOLLOWERS_ID, "followers", MAX_DEPTH)
     )
 
     # Leaf collection: counted, but not walked.
     assert graph.nodes[OWNER_ID]["followers_count"] == TOTAL
-    assert queue.empty()
+    assert dis.enqueued == []
 
 
 # ---------------------------------------------------------------------------
@@ -220,11 +211,11 @@ async def test_does_not_enqueue_the_page_at_max_depth():
 async def test_walks_inline_ordered_items_below_max_depth():
     members = [MEMBER_A, MEMBER_B]
     client = FakeActivityPubClient(doc=inline_collection(FOLLOWERS_ID, members))
-    queue = asyncio.Queue()
+    dis = FakeDispatcher()
     graph = nx.DiGraph()
     graph.add_node(OWNER_ID)
 
-    await make_handler(client, queue, graph).handle(
+    await make_handler(client, dis, graph).handle(
         collection_job(FOLLOWERS_ID, "followers", 0)
     )
 
@@ -236,7 +227,7 @@ async def test_walks_inline_ordered_items_below_max_depth():
         assert m in graph.nodes
         assert graph.has_edge(m, OWNER_ID)
     # And an actor job at depth+1 for each, in order — no page jobs.
-    jobs = drain(queue)
+    jobs = dis.enqueued
     assert [j for j in jobs if j["job_type"] == "page"] == []
     assert [j for j in jobs if j["job_type"] == "actor"] == [
         actor_job(MEMBER_A, 1),
@@ -249,27 +240,27 @@ async def test_walks_inline_items_key():
     client = FakeActivityPubClient(
         doc=inline_collection(FOLLOWERS_ID, [MEMBER_A], key="items")
     )
-    queue = asyncio.Queue()
+    dis = FakeDispatcher()
     graph = nx.DiGraph()
     graph.add_node(OWNER_ID)
 
-    await make_handler(client, queue, graph).handle(
+    await make_handler(client, dis, graph).handle(
         collection_job(FOLLOWERS_ID, "followers", 0)
     )
 
     assert graph.has_edge(MEMBER_A, OWNER_ID)
-    assert [j for j in drain(queue) if j["job_type"] == "actor"] == [
+    assert [j for j in dis.enqueued if j["job_type"] == "actor"] == [
         actor_job(MEMBER_A, 1)
     ]
 
 
 async def test_inline_following_direction_orients_edges_from_owner():
     client = FakeActivityPubClient(doc=inline_collection(FOLLOWING_ID, [MEMBER_A]))
-    queue = asyncio.Queue()
+    dis = FakeDispatcher()
     graph = nx.DiGraph()
     graph.add_node(OWNER_ID)
 
-    await make_handler(client, queue, graph).handle(
+    await make_handler(client, dis, graph).handle(
         collection_job(FOLLOWING_ID, "following", 0)
     )
 
@@ -281,11 +272,11 @@ async def test_inline_following_direction_orients_edges_from_owner():
 async def test_inline_member_dicts_use_their_id():
     members = [{"id": MEMBER_A, "type": "Person"}, {"id": MEMBER_B, "type": "Person"}]
     client = FakeActivityPubClient(doc=inline_collection(FOLLOWERS_ID, members))
-    queue = asyncio.Queue()
+    dis = FakeDispatcher()
     graph = nx.DiGraph()
     graph.add_node(OWNER_ID)
 
-    await make_handler(client, queue, graph).handle(
+    await make_handler(client, dis, graph).handle(
         collection_job(FOLLOWERS_ID, "followers", 0)
     )
 
@@ -297,11 +288,11 @@ async def test_does_not_walk_inline_items_at_max_depth():
     client = FakeActivityPubClient(
         doc=inline_collection(FOLLOWERS_ID, [MEMBER_A, MEMBER_B])
     )
-    queue = asyncio.Queue()
+    dis = FakeDispatcher()
     graph = nx.DiGraph()
     graph.add_node(OWNER_ID)
 
-    await make_handler(client, queue, graph).handle(
+    await make_handler(client, dis, graph).handle(
         collection_job(FOLLOWERS_ID, "followers", MAX_DEPTH)
     )
 
@@ -309,7 +300,7 @@ async def test_does_not_walk_inline_items_at_max_depth():
     # prevents enqueuing actors at max_depth+1 (depth overrun).
     assert graph.nodes[OWNER_ID]["followers_count"] == 2
     assert graph.number_of_edges() == 0
-    assert queue.empty()
+    assert dis.enqueued == []
 
 
 async def test_prefers_pagination_when_both_first_and_inline_present():
@@ -317,16 +308,16 @@ async def test_prefers_pagination_when_both_first_and_inline_present():
     doc = inline_collection(FOLLOWERS_ID, [MEMBER_A])
     doc["first"] = f"{FOLLOWERS_ID}?page=1"
     client = FakeActivityPubClient(doc=doc)
-    queue = asyncio.Queue()
+    dis = FakeDispatcher()
     graph = nx.DiGraph()
     graph.add_node(OWNER_ID)
 
-    await make_handler(client, queue, graph).handle(
+    await make_handler(client, dis, graph).handle(
         collection_job(FOLLOWERS_ID, "followers", 0)
     )
 
     # Paginate; don't ALSO process the inline preview (would double-count members).
-    jobs = drain(queue)
+    jobs = dis.enqueued
     assert [j for j in jobs if j["job_type"] == "page"] == [
         page_job(f"{FOLLOWERS_ID}?page=1", "followers", 0)
     ]
@@ -336,7 +327,7 @@ async def test_prefers_pagination_when_both_first_and_inline_present():
 
 def test_next_available_delegates_to_the_client_for_the_collection_url():
     client = FakeActivityPubClient()
-    handler = make_handler(client, asyncio.Queue(), nx.DiGraph())
+    handler = make_handler(client, FakeDispatcher(), nx.DiGraph())
 
     result = handler.next_available(collection_job(FOLLOWERS_ID, "followers", 0))
 

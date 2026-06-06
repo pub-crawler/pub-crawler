@@ -105,13 +105,12 @@ class SpyCounter:
 
 
 class FakeDispatcher:
-    """Forwards a handler's enqueue() straight onto a queue — no next_available
-    stamping or routing (that's the real Dispatcher's job, tested separately).
-    Handler tests pass FakeDispatcher(queue) where they used to pass the queue,
-    and inspect that same queue exactly as before."""
+    """Records the jobs a handler enqueues, in order — no queue, no next_available
+    stamping, no routing (that's the real Dispatcher's job, tested separately).
+    Handler tests construct FakeDispatcher() and inspect `.enqueued`."""
 
-    def __init__(self, queue):
-        self.queue = queue
+    def __init__(self):
+        self.enqueued = []
 
     async def enqueue(self, job):
-        await self.queue.put(job)
+        self.enqueued.append(job)
