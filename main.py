@@ -73,7 +73,11 @@ async def crawl_graph(inputfile, outputfile, *, transport=None):
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.DEBUG)
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    )
+    logging.getLogger("httpcore").setLevel(logging.INFO)
     import sys
 
     input = sys.argv[1]
