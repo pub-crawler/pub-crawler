@@ -66,21 +66,15 @@ def actor(client):
 
 
 def test_webfinger_content_type_and_subject(client):
-    r = client.get(
-        f"{BASE}/.well-known/webfinger", params={"resource": ACCT}
-    )
+    r = client.get(f"{BASE}/.well-known/webfinger", params={"resource": ACCT})
     assert r.status_code == 200
     assert media_type(r) == JRD_TYPE
     assert r.json()["subject"] == ACCT
 
 
 def test_webfinger_advertises_activitypub_and_ld_json(client):
-    r = client.get(
-        f"{BASE}/.well-known/webfinger", params={"resource": ACCT}
-    )
-    self_links = [
-        link for link in r.json()["links"] if link.get("rel") == "self"
-    ]
+    r = client.get(f"{BASE}/.well-known/webfinger", params={"resource": ACCT})
+    self_links = [link for link in r.json()["links"] if link.get("rel") == "self"]
     by_type = {link.get("type"): link for link in self_links}
 
     assert AS2_TYPE in by_type
@@ -94,12 +88,8 @@ def test_webfinger_advertises_activitypub_and_ld_json(client):
 
 
 def test_webfinger_resolves_actor_id_as_resource(client):
-    by_acct = client.get(
-        f"{BASE}/.well-known/webfinger", params={"resource": ACCT}
-    )
-    by_id = client.get(
-        f"{BASE}/.well-known/webfinger", params={"resource": ACTOR_URL}
-    )
+    by_acct = client.get(f"{BASE}/.well-known/webfinger", params={"resource": ACCT})
+    by_id = client.get(f"{BASE}/.well-known/webfinger", params={"resource": ACTOR_URL})
     assert by_id.status_code == 200
     assert by_id.json()["links"] == by_acct.json()["links"]
 

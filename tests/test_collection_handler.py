@@ -157,8 +157,8 @@ async def test_count_does_not_clobber_owner_metadata():
     )
 
     node = graph.nodes[OWNER_ID]
-    assert node["followers_count"] == TOTAL    # count under a distinct key...
-    assert node["followers"] == FOLLOWERS_ID   # ...so the URL attribute survives
+    assert node["followers_count"] == TOTAL  # count under a distinct key...
+    assert node["followers"] == FOLLOWERS_ID  # ...so the URL attribute survives
     assert node["type"] == "Person"
 
 

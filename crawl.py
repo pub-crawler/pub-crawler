@@ -6,6 +6,7 @@ import asyncio
 
 KEY_ID = "https://crawler.pub/actor#main-key"
 
+
 async def _crawl(id, wf, ap):
     if id.startswith(("http://", "https://")):
         url = id
@@ -13,9 +14,10 @@ async def _crawl(id, wf, ap):
         url = await wf.get_actor_id(id)
     return await ap.get(url)
 
+
 async def crawl(id, *, transport=None, private_key_pem=None):
     if private_key_pem is None:
-        private_key_pem = Path("private.pem").read_text()   # CLI default
+        private_key_pem = Path("private.pem").read_text()  # CLI default
     general = FixedWindowCounter(300, 5 * 60 * 1000)
     paged = FixedWindowCounter(300, 15 * 60 * 1000)
     wf = WebfingerClient(general, transport=transport)
@@ -26,8 +28,10 @@ async def crawl(id, *, transport=None, private_key_pem=None):
         await wf.aclose()
         await ap.aclose()
 
+
 if __name__ == "__main__":
     import sys
     import json
+
     arg = sys.argv[1]
     print(json.dumps(asyncio.run(crawl(arg)), indent=2))

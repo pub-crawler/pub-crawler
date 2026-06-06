@@ -69,7 +69,9 @@ def make_client(handler, general=None):
 
 
 async def test_get_actor_id_returns_the_actor_url():
-    assert await make_client(serve([AP_SELF])).get_actor_id("bot@crawler.pub") == ACTOR_URL
+    assert (
+        await make_client(serve([AP_SELF])).get_actor_id("bot@crawler.pub") == ACTOR_URL
+    )
 
 
 async def test_queries_the_webfinger_endpoint_over_https():
@@ -102,7 +104,9 @@ async def test_accepts_common_address_forms(wf):
 
 async def test_prefers_activity_json_over_ld_json():
     # Both present (ld+json listed first to prove preference, not order).
-    actor_id = await make_client(serve([LD_SELF, AP_SELF])).get_actor_id("bot@crawler.pub")
+    actor_id = await make_client(serve([LD_SELF, AP_SELF])).get_actor_id(
+        "bot@crawler.pub"
+    )
     assert actor_id == ACTOR_URL
 
 

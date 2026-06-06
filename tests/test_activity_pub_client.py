@@ -253,9 +253,7 @@ async def test_acquires_once_per_redirect_hop(keypair):
             )
         return httpx.Response(200, json={"ok": True})
 
-    await make_client(handler, pem, general=general).get(
-        "https://remote.example/start"
-    )
+    await make_client(handler, pem, general=general).get("https://remote.example/start")
 
     # The acquire lives in _get(), so each hop (original + redirect target)
     # acquires independently.
@@ -292,9 +290,9 @@ def test_next_available_non_paged_uses_general_only():
 
     result = na_client(general, paged).next_available(URL)  # no ?page=
 
-    assert result == 100                  # general's answer, passed through
-    assert general.origins == [ORIGIN]    # keyed by origin (scheme://host)
-    assert paged.origins == []            # paged gate is irrelevant to a plain GET
+    assert result == 100  # general's answer, passed through
+    assert general.origins == [ORIGIN]  # keyed by origin (scheme://host)
+    assert paged.origins == []  # paged gate is irrelevant to a plain GET
 
 
 def test_next_available_paged_returns_the_later_gate_paged_binding():

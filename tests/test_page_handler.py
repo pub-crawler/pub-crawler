@@ -131,11 +131,11 @@ async def test_handles_embedded_actor_objects():
     queue = asyncio.Queue()
     graph = nx.DiGraph()
 
-    await PageHandler(client, FakeDispatcher(queue),graph).handle(input_job())
+    await PageHandler(client, FakeDispatcher(queue), graph).handle(input_job())
 
     actor_jobs = [j for j in drain(queue) if j["job_type"] == "actor"]
     assert actor_jobs == [actor_job(ITEM_A, DEPTH + 1)]  # uses the embedded id
-    assert graph.has_edge(ITEM_A, OWNER_ID)               # ...and so does the edge
+    assert graph.has_edge(ITEM_A, OWNER_ID)  # ...and so does the edge
 
 
 # ---------------------------------------------------------------------------
@@ -155,7 +155,7 @@ async def test_adds_a_follow_edge_per_member(direction, edge):
     queue = asyncio.Queue()
     graph = nx.DiGraph()
 
-    await PageHandler(client, FakeDispatcher(queue),graph).handle(input_job(direction))
+    await PageHandler(client, FakeDispatcher(queue), graph).handle(input_job(direction))
 
     assert graph.has_edge(*edge)
     assert graph.number_of_edges() == 1

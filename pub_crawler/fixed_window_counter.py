@@ -40,7 +40,7 @@ class FixedWindowCounter:
         return (self.now() // self.window_ms) * self.window_ms
 
     def _window_end(self):
-        return (self._window_start() + self.window_ms)
+        return self._window_start() + self.window_ms
 
     async def _sleep_till_window_reset(self):
         return await self.sleep(self._window_end() - self.now())
