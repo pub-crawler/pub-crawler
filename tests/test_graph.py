@@ -30,6 +30,8 @@ Assumptions flagged for confirmation:
     NOT pinned here — that's the FK ON DELETE policy, your call.
 """
 
+import asyncio
+
 import pytest
 
 from support import FakeGraph
@@ -43,10 +45,11 @@ C = "https://c.example/users/c"
 async def graph(request):
     """The contract subject, one per backend.
 
-    'fake' -> an in-memory FakeGraph. 'db' -> a DatabaseGraph on a real Postgres
-    connection, wrapped in a transaction that's rolled back after the test, so
-    the same 14 assertions run against real SQL without leaving anything behind.
-    The 'db' param skips until both TEST_DATABASE_URL and DatabaseGraph exist.
+    'fake' -> an in-memory FakeGraph. 'db' -> a DatabaseGraph over a real Postgres
+    connection *pool*; each table is truncated before the test (rollback isolation
+    can't span a pool's many connections), so the same assertions run against real
+    SQL from a clean slate. The 'db' param skips until both TEST_DATABASE_URL and
+    DatabaseGraph exist.
     """
     if request.param == "fake":
         yield FakeGraph()
@@ -61,17 +64,22 @@ async def graph(request):
     except ImportError as exc:
         pytest.skip(f"DatabaseGraph not implemented yet ({exc})")
 
-    conn = await asyncpg.connect(dsn)
+    # max_size > 1 so concurrent ops land on distinct connections (the whole point
+    # of the pool, and what the concurrency test exercises).
+    pool = await asyncpg.create_pool(dsn, min_size=1, max_size=10)
     try:
-        await database_setup(conn)  # idempotent (migration ledger), commits schema
-        tr = conn.transaction()
-        await tr.start()
-        try:
-            yield DatabaseGraph(conn)
-        finally:
-            await tr.rollback()
+        async with pool.acquire() as conn:
+            await database_setup(conn)  # idempotent (migration ledger)
+            # Pool isolation = truncate, not rollback. RESTART IDENTITY keeps node
+            # ids deterministic across tests; CASCADE clears the FK-linked rows.
+            # (The migrations ledger is intentionally left intact.)
+            await conn.execute(
+                "TRUNCATE node, edge, node_property, edge_property "
+                "RESTART IDENTITY CASCADE"
+            )
+        yield DatabaseGraph(pool)
     finally:
-        await conn.close()
+        await pool.close()
 
 
 # ---------------------------------------------------------------------------
@@ -213,3 +221,25 @@ async def test_all_edges_yields_endpoint_ids_and_props(graph):
         seen[(id_to_label[from_id], id_to_label[to_id])] = props
 
     assert seen == {(A, B): {"direction": "followers"}, (A, C): {}}
+
+
+# ---------------------------------------------------------------------------
+# concurrency — the crawler's workers all share ONE Graph
+# ---------------------------------------------------------------------------
+
+
+async def test_concurrent_operations_share_the_connection_safely(graph):
+    """The crawler runs ~25 workers against a single shared Graph. For
+    DatabaseGraph that's one asyncpg connection, which is NOT concurrency-safe —
+    overlapping ops raise "another operation is in progress" unless the graph
+    serializes access. Trivial for FakeGraph; the real assertion is the db param.
+    """
+    labels = [f"https://example.test/users/u{i}" for i in range(20)]
+
+    await asyncio.gather(*(graph.ensure_node(label) for label in labels))
+    await asyncio.gather(
+        *(graph.set_node_property(label, "n", i) for i, label in enumerate(labels))
+    )
+
+    for i, label in enumerate(labels):
+        assert await graph.get_node_property(label, "n") == i

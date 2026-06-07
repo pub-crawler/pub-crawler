@@ -43,12 +43,11 @@ async def snapshot(G, output_filename):
 
 
 async def main(database_url, output_filename):
-    conn = await asyncpg.connect(database_url)
+    pool = await asyncpg.create_pool(database_url)
     try:
-        async with conn.transaction():
-            await snapshot(DatabaseGraph(conn), output_filename)
+        await snapshot(DatabaseGraph(pool), output_filename)
     finally:
-        await conn.close()
+        await pool.close()
 
 
 if __name__ == "__main__":

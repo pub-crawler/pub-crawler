@@ -51,7 +51,7 @@ async def worker(name, dispatcher):
             logging.debug(job)
             await dispatcher.dispatch(job)
         except Exception as e:
-            logging.debug(e)
+            logging.warning(e)
             pass
         dispatcher.done(job)
 
@@ -73,14 +73,15 @@ async def crawl_graph(dispatcher, *, max_workers=MAX_WORKERS):
 async def main(redis_url, database_url):
 
     r = redis.asyncio.Redis.from_url(redis_url)
-    conn = await asyncpg.connect(database_url)
-    await database_setup(conn)
-    G = DatabaseGraph(conn)
+    pool = await asyncpg.create_pool(database_url)
+    async with pool.acquire() as conn:
+        await database_setup(conn)
+    G = DatabaseGraph(pool)
 
     try:
         await crawl_graph(make_dispatcher(r, G))
     finally:
-        await conn.close()
+        await pool.close()
 
 
 if __name__ == "__main__":

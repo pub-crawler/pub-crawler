@@ -17,17 +17,17 @@ KEY_ID = "https://crawler.pub/actor#main-key"
 async def main(database_url, redis_url, input_filename, output_filename):
 
     r = redis.asyncio.Redis.from_url(redis_url)
-    conn = await asyncpg.connect(database_url)
-    await database_setup(conn)
-    G = DatabaseGraph(conn)
+    pool = await asyncpg.create_pool(database_url)
+    async with pool.acquire() as conn:
+        await database_setup(conn)
+    G = DatabaseGraph(pool)
 
     try:
         await add_seeds(input_filename, r)
         await crawl_graph(make_dispatcher(r, G))
-        async with conn.transaction():
-            await snapshot(DatabaseGraph(conn), output_filename)
+        await snapshot(G, output_filename)
     finally:
-        await conn.close()
+        await pool.close()
 
 
 if __name__ == "__main__":
