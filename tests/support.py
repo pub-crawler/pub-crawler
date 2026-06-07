@@ -114,3 +114,67 @@ class FakeDispatcher:
 
     async def enqueue(self, job):
         self.enqueued.append(job)
+
+
+# --- DatabaseGraph stand-in for handler unit tests ----------------------------
+
+
+class FakeGraph:
+
+    def __init__(self):
+        self._nodes = dict()
+        self._edges = dict()
+
+    async def ensure_node(self, label):
+        if not label in self._nodes:
+            self._nodes[label] = dict()
+
+    async def ensure_edge(self, from_label, to_label):
+        if not from_label in self._edges:
+            self._edges[from_label] = dict()
+        if not to_label in self._edges[from_label]:
+            self._edges[from_label][to_label] = dict()
+
+    async def has_node(self, label):
+        return label in self._nodes
+
+    async def has_edge(self, from_label, to_label):
+        return from_label in self._edges and to_label in self._edges[from_label]
+
+    async def delete_node(self, label):
+        if label in self._nodes:
+            del self._nodes[label]
+
+    async def delete_edge(self, from_label, to_label):
+        if from_label in self._edges and to_label in self._edges[from_label]:
+            del self._edges[from_label][to_label]
+
+    async def set_node_property(self, label, name, value):
+        self._nodes[label][name] = value
+
+    async def set_edge_property(self, from_label, to_label, name, value):
+        self._edges[from_label][to_label][name] = value
+
+    async def get_node_property(self, label, name):
+        if name in self._nodes[label]:
+            return self._nodes[label][name]
+        else:
+            return None
+
+    async def get_edge_property(self, from_label, to_label, name):
+        return self._edges[from_label][to_label][name]
+
+    async def get_node_properties(self, label):
+        return self._nodes[label]
+
+    async def get_edge_properties(self, from_label, to_label):
+        return self._edges[from_label][to_label]
+
+    async def all_nodes(self):
+        for label, props in self._nodes.items():
+            yield label, props
+
+    async def all_edges(self):
+        for from_label in self._edges:
+            for to_label, props in self._edges[from_label].items():
+                yield from_label, to_label, props
