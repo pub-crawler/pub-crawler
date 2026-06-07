@@ -61,6 +61,20 @@ async def test_enqueues_the_actor_at_depth_zero():
     assert dis.enqueued == [ACTOR_JOB]
 
 
+async def test_does_not_enqueue_an_already_crawled_actor():
+    # The seed resolves to an actor that's already been fetched (e.g. a re-run).
+    # Don't re-enqueue it — the handle-time skip would just drop it anyway.
+    client = FakeWebfingerClient()
+    dis = FakeDispatcher()
+    graph = FakeGraph()
+    await graph.ensure_node(ACTOR_ID)
+    await graph.set_node_property(ACTOR_ID, "last_fetch_date", "2026-06-01T00:00:00")
+
+    await WebfingerHandler(client, dis, graph).handle(WF_JOB)
+
+    assert dis.enqueued == []
+
+
 async def test_lookup_failure_adds_nothing():
     client = FakeWebfingerClient(error=ValueError("no actor link"))
     dis = FakeDispatcher()

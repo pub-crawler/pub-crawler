@@ -51,9 +51,11 @@ class PageHandler(Handler):
                 await self.graph.set_edge_property(
                     owner_id, id, f"from_{direction}", True
                 )
-            await self.dispatcher.enqueue(
-                {"job_type": "actor", "actor_id": id, "depth": depth + 1}
-            )
+            last_fetch_date = await self.graph.get_node_property(id, "last_fetch_date")
+            if not last_fetch_date:
+                await self.dispatcher.enqueue(
+                    {"job_type": "actor", "actor_id": id, "depth": depth + 1}
+                )
 
     def next_available(self, job):
         return self.client.next_available(job["page_id"])

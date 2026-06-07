@@ -254,6 +254,23 @@ async def test_walks_inline_items_key():
     ]
 
 
+async def test_does_not_enqueue_an_actor_job_for_an_already_crawled_member():
+    client = FakeActivityPubClient(doc=inline_collection(FOLLOWERS_ID, [MEMBER_A]))
+    dis = FakeDispatcher()
+    graph = FakeGraph()
+    await graph.ensure_node(OWNER_ID)
+    await graph.ensure_node(MEMBER_A)
+    await graph.set_node_property(MEMBER_A, "last_fetch_date", "2026-06-01T00:00:00")
+
+    await make_handler(client, dis, graph).handle(
+        collection_job(FOLLOWERS_ID, "followers", 0)
+    )
+
+    # Already fetched -> no redundant actor job, but the edge still lands.
+    assert [j for j in dis.enqueued if j["job_type"] == "actor"] == []
+    assert await graph.has_edge(MEMBER_A, OWNER_ID)
+
+
 async def test_inline_following_direction_orients_edges_from_owner():
     client = FakeActivityPubClient(doc=inline_collection(FOLLOWING_ID, [MEMBER_A]))
     dis = FakeDispatcher()

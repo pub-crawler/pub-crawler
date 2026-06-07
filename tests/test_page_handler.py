@@ -128,6 +128,21 @@ async def test_handles_embedded_actor_objects():
     assert await graph.has_edge(ITEM_A, OWNER_ID)  # ...and so does the edge
 
 
+async def test_does_not_enqueue_an_actor_job_for_an_already_crawled_member():
+    client = FakeActivityPubClient(doc=page_doc([ITEM_A]))
+    dis = FakeDispatcher()
+    graph = FakeGraph()
+    await graph.ensure_node(ITEM_A)
+    await graph.set_node_property(ITEM_A, "last_fetch_date", "2026-06-01T00:00:00")
+
+    await PageHandler(client, dis, graph).handle(input_job())
+
+    # Already fetched -> no redundant actor job...
+    assert [j for j in dis.enqueued if j["job_type"] == "actor"] == []
+    # ...but the follow edge is still recorded (it's valid regardless).
+    assert await graph.has_edge(ITEM_A, OWNER_ID)
+
+
 # ---------------------------------------------------------------------------
 # Edges (direction sets orientation)
 # ---------------------------------------------------------------------------
