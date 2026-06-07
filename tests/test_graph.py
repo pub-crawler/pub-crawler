@@ -1,9 +1,10 @@
 """Contract tests for the Graph interface — every implementation must satisfy them.
 
-The same assertions run against each backend through the `graph` fixture:
-FakeGraph now, DatabaseGraph (testcontainers Postgres) later. That's what keeps
-FakeGraph provably equivalent to the real one — the handler tests trust the fake
-only because these hold for both.
+The same assertions run against each backend through the parametrized `graph`
+fixture: FakeGraph always, and DatabaseGraph against a real Postgres when
+TEST_DATABASE_URL is set (the `db`-marked params, deselected by default). That's
+what keeps FakeGraph provably equivalent to the real one — the handler tests
+trust the fake only because these hold for both.
 
 The interface is async (DatabaseGraph does async DB I/O):
   await ensure_node(label) / has_node(label)->bool / delete_node(label)
@@ -12,13 +13,18 @@ The interface is async (DatabaseGraph does async DB I/O):
   await get_node_property(label, name)        -> value (None if absent)
   await get_node_properties(label)            -> {name: value}
   (edge equivalents)
-  async for label, props in all_nodes()
-  async for f, t, props in all_edges()
+  async for node_id, label, props in all_nodes()      # int id (for GML)
+  async for from_id, to_id, props in all_edges()      # int endpoint ids only
 
 Assumptions flagged for confirmation:
-  - all_nodes()/all_edges() yield (label, props) / (from, to, props) bundles
-    (so the export is one pass, not N+1). Flip if you'd rather they yield bare
-    ids and the export calls get_*_properties per item.
+  - all_nodes() yields (id, label, props); all_edges() yields (from_id, to_id,
+    props) — integer node ids, because that's what GML references. all_edges
+    carries ONLY ids (no labels); map them back via all_nodes if you need labels.
+    props is bundled so the export is one pass, not N+1.
+  - all_nodes()/all_edges() run a server-side cursor and do NOT open their own
+    transaction — the caller iterates them inside a transaction it owns (one txn
+    around both = a consistent snapshot). The db fixture's per-test rollback txn
+    supplies that here; FakeGraph ignores it.
   - get_*_property returns None for an absent property.
   - delete_node's behaviour when edges still reference it (cascade vs. error) is
     NOT pinned here — that's the FK ON DELETE policy, your call.
@@ -33,10 +39,39 @@ B = "https://b.example/users/b"
 C = "https://c.example/users/c"
 
 
-@pytest.fixture
-def graph():
-    # Shared contract fixture; DatabaseGraph (testcontainers) joins as a param later.
-    return FakeGraph()
+@pytest.fixture(params=["fake", pytest.param("db", marks=pytest.mark.db)])
+async def graph(request):
+    """The contract subject, one per backend.
+
+    'fake' -> an in-memory FakeGraph. 'db' -> a DatabaseGraph on a real Postgres
+    connection, wrapped in a transaction that's rolled back after the test, so
+    the same 14 assertions run against real SQL without leaving anything behind.
+    The 'db' param skips until both TEST_DATABASE_URL and DatabaseGraph exist.
+    """
+    if request.param == "fake":
+        yield FakeGraph()
+        return
+
+    dsn = request.getfixturevalue("pg_dsn")  # skips if unset / asyncpg missing
+    import asyncpg
+
+    try:
+        from pub_crawler.database import database_setup
+        from pub_crawler.database_graph import DatabaseGraph
+    except ImportError as exc:
+        pytest.skip(f"DatabaseGraph not implemented yet ({exc})")
+
+    conn = await asyncpg.connect(dsn)
+    try:
+        await database_setup(conn)  # idempotent (migration ledger), commits schema
+        tr = conn.transaction()
+        await tr.start()
+        try:
+            yield DatabaseGraph(conn)
+        finally:
+            await tr.rollback()
+    finally:
+        await conn.close()
 
 
 # ---------------------------------------------------------------------------
@@ -146,21 +181,35 @@ async def test_set_and_get_edge_property(graph):
 # ---------------------------------------------------------------------------
 
 
-async def test_all_nodes_yields_label_and_props(graph):
+async def test_all_nodes_yields_id_label_and_props(graph):
     await graph.ensure_node(A)
     await graph.set_node_property(A, "followers_count", 5)
     await graph.ensure_node(B)  # no props
 
-    seen = {label: props async for label, props in graph.all_nodes()}
-    assert seen == {A: {"followers_count": 5}, B: {}}
+    by_label = {
+        label: (node_id, props) async for node_id, label, props in graph.all_nodes()
+    }
+    assert by_label.keys() == {A, B}
+    assert by_label[A][1] == {"followers_count": 5}
+    assert by_label[B][1] == {}
+    # ids are integers (GML node ids) and distinct per node
+    assert isinstance(by_label[A][0], int)
+    assert by_label[A][0] != by_label[B][0]
 
 
-async def test_all_edges_yields_endpoints_and_props(graph):
+async def test_all_edges_yields_endpoint_ids_and_props(graph):
     for n in (A, B, C):
         await graph.ensure_node(n)
     await graph.ensure_edge(A, B)
     await graph.ensure_edge(A, C)  # no props
     await graph.set_edge_property(A, B, "direction", "followers")
 
-    seen = {(f, t): props async for f, t, props in graph.all_edges()}
+    # all_edges yields integer endpoint ids (what GML's source/target reference);
+    # map id -> label via all_nodes to interpret them, exactly as snapshot.py will.
+    id_to_label = {node_id: label async for node_id, label, _ in graph.all_nodes()}
+
+    seen = {}
+    async for from_id, to_id, props in graph.all_edges():
+        seen[(id_to_label[from_id], id_to_label[to_id])] = props
+
     assert seen == {(A, B): {"direction": "followers"}, (A, C): {}}

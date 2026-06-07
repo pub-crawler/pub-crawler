@@ -124,10 +124,13 @@ class FakeGraph:
     def __init__(self):
         self._nodes = dict()
         self._edges = dict()
+        self._ids = dict()
+        self._counter = 0
 
     async def ensure_node(self, label):
         if not label in self._nodes:
             self._nodes[label] = dict()
+            self._ids[label] = self._next_counter()
 
     async def ensure_edge(self, from_label, to_label):
         if not from_label in self._edges:
@@ -172,9 +175,16 @@ class FakeGraph:
 
     async def all_nodes(self):
         for label, props in self._nodes.items():
-            yield label, props
+            id = self._ids[label]
+            yield id, label, props
 
     async def all_edges(self):
         for from_label in self._edges:
             for to_label, props in self._edges[from_label].items():
-                yield from_label, to_label, props
+                from_node = self._ids[from_label]
+                to_node = self._ids[to_label]
+                yield from_node, to_node, props
+
+    def _next_counter(self):
+        self._counter += 1
+        return self._counter
