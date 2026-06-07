@@ -161,9 +161,8 @@ class DatabaseGraph:
         LEFT JOIN node_property p ON p.id = n.id
         GROUP BY n.id
         """
-        async with self._conn.transaction():
-            async for row in self._conn.cursor(sql):
-                yield row["id"], row["label"], json.loads(row["props"])
+        async for row in self._conn.cursor(sql):
+            yield row["id"], row["label"], json.loads(row["props"])
 
     async def all_edges(self):
         sql = """
@@ -177,9 +176,8 @@ class DatabaseGraph:
               ON p.from_node = e.from_node AND p.to_node = e.to_node
         GROUP BY e.from_node, e.to_node
         """
-        async with self._conn.transaction():
-            async for row in self._conn.cursor(sql):
-                yield row["from_node"], row["to_node"], json.loads(row["props"])
+        async for row in self._conn.cursor(sql):
+            yield row["from_node"], row["to_node"], json.loads(row["props"])
 
     async def _node_id(self, label):
         return await self._conn.fetchval("SELECT id FROM node WHERE label=$1", label)
