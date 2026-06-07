@@ -15,7 +15,7 @@ import redis.asyncio
 import asyncpg
 
 KEY_ID = "https://crawler.pub/actor#main-key"
-MAX_DEPTH = 2
+MAX_DEPTH = 1
 MAX_WORKERS = 25
 
 
