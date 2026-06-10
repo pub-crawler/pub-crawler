@@ -88,6 +88,19 @@ def actor_job(actor_id, depth):
     return {"job_type": "actor", "actor_id": actor_id, "depth": depth}
 
 
+def hidden_collection(collection_id, total=TOTAL):
+    """A collection that exposes only its count: no `first`, no inline members.
+
+    The common locked-account shape — the actor advertises totalItems but
+    refuses to enumerate who's in the list.
+    """
+    return {
+        "id": collection_id,
+        "type": "OrderedCollection",
+        "totalItems": total,
+    }
+
+
 NA_RESULT = 4242
 
 
@@ -340,6 +353,73 @@ async def test_prefers_pagination_when_both_first_and_inline_present():
     ]
     assert [j for j in jobs if j["job_type"] == "actor"] == []
     assert not await graph.has_edge(MEMBER_A, OWNER_ID)
+
+
+# ---------------------------------------------------------------------------
+# members_shared flag: did the actor actually expose its membership?
+#   paged (`first`) or inline (items/orderedItems) -> True
+#   neither (count only / locked account)          -> False
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "direction, collection_id",
+    [("followers", FOLLOWERS_ID), ("following", FOLLOWING_ID)],
+)
+async def test_paged_collection_marks_members_shared(direction, collection_id):
+    client = FakeActivityPubClient(doc=collection(collection_id))
+    dis = FakeDispatcher()
+    graph = FakeGraph()
+    await graph.ensure_node(OWNER_ID)
+
+    await make_handler(client, dis, graph).handle(
+        collection_job(collection_id, direction, 0)
+    )
+
+    assert await graph.get_node_property(OWNER_ID, f"{direction}_members_shared") is True
+
+
+@pytest.mark.parametrize(
+    "direction, collection_id",
+    [("followers", FOLLOWERS_ID), ("following", FOLLOWING_ID)],
+)
+async def test_inline_collection_marks_members_shared(direction, collection_id):
+    client = FakeActivityPubClient(doc=inline_collection(collection_id, [MEMBER_A]))
+    dis = FakeDispatcher()
+    graph = FakeGraph()
+    await graph.ensure_node(OWNER_ID)
+
+    await make_handler(client, dis, graph).handle(
+        collection_job(collection_id, direction, 0)
+    )
+
+    assert await graph.get_node_property(OWNER_ID, f"{direction}_members_shared") is True
+
+
+@pytest.mark.parametrize(
+    "direction, collection_id",
+    [("followers", FOLLOWERS_ID), ("following", FOLLOWING_ID)],
+)
+async def test_collection_without_members_marks_members_not_shared(
+    direction, collection_id
+):
+    client = FakeActivityPubClient(doc=hidden_collection(collection_id))
+    dis = FakeDispatcher()
+    graph = FakeGraph()
+    await graph.ensure_node(OWNER_ID)
+
+    await make_handler(client, dis, graph).handle(
+        collection_job(collection_id, direction, 0)
+    )
+
+    # No first / items / orderedItems -> the actor didn't share its membership.
+    assert (
+        await graph.get_node_property(OWNER_ID, f"{direction}_members_shared") is False
+    )
+    # The count is still recorded — hidden-but-counted is a real state — and with
+    # nothing to walk, nothing is enqueued.
+    assert await graph.get_node_property(OWNER_ID, f"{direction}_count") == TOTAL
+    assert dis.enqueued == []
 
 
 def test_next_available_delegates_to_the_client_for_the_collection_url():

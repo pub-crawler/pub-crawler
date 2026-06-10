@@ -20,6 +20,7 @@ class CollectionHandler(Handler):
         if depth < self.max_depth:
             first = json.get("first", None)
             if first:
+                await self.graph.set_node_property(owner_id, f"{direction}_members_shared", True)
                 await self.dispatcher.enqueue(
                     {
                         "job_type": "page",
@@ -32,6 +33,7 @@ class CollectionHandler(Handler):
             else:
                 items = json.get("items", json.get("orderedItems", None))
                 if items:
+                    await self.graph.set_node_property(owner_id, f"{direction}_members_shared", True)
                     for item in items:
                         if type(item) == dict:
                             id = item["id"]
@@ -62,6 +64,8 @@ class CollectionHandler(Handler):
                                     "depth": depth + 1,
                                 }
                             )
+                else:
+                    await self.graph.set_node_property(owner_id, f"{direction}_members_shared", False)
 
     def next_available(self, job):
         return self.client.next_available(job["collection_id"])
