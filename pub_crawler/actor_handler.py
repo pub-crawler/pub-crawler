@@ -22,6 +22,7 @@ class ActorHandler(Handler):
         await self.graph.set_node_property(
             actor_id, "last_fetch_date", datetime.now(timezone.utc).isoformat()
         )
+        await self.graph.set_node_property(actor_id, "depth", depth)
         await self._set_prop(actor_id, json, "preferredUsername")
         await self._set_prop(actor_id, json, "name")
         await self._set_prop(actor_id, json, "published")

@@ -95,6 +95,18 @@ async def test_fetches_actor_and_stamps_node():
     assert last_fetch_date
 
 
+@pytest.mark.parametrize("depth", [0, 3])
+async def test_stamps_node_with_the_crawl_depth(depth):
+    client = FakeActivityPubClient()
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(
+        actor_job(ACTOR_ID, depth)
+    )
+
+    assert await graph.get_node_property(ACTOR_ID, "depth") == depth
+
+
 async def test_enriches_an_existing_bare_node():
     client = FakeActivityPubClient()
     graph = FakeGraph()
