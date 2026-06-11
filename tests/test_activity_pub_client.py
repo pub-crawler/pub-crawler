@@ -97,6 +97,48 @@ async def test_get_sends_a_valid_signature(keypair):
 
 
 # ---------------------------------------------------------------------------
+# get_with_headers: parsed body PLUS the response headers (get() is this,
+# minus the headers). Used to read the Server header for node metadata.
+# ---------------------------------------------------------------------------
+
+
+async def test_get_with_headers_returns_body_and_headers(keypair):
+    pem, _ = keypair
+    body = {"id": URL, "type": "Person"}
+
+    def handler(request):
+        return httpx.Response(200, json=body, headers={"Server": "Mastodon"})
+
+    result_body, headers = await make_client(handler, pem).get_with_headers(URL)
+
+    assert result_body == body
+    # Real response headers are case-insensitive, so Server reads back whatever
+    # case the caller asks for.
+    assert headers["server"] == "Mastodon"
+
+
+async def test_get_with_headers_returns_the_final_hop_headers(keypair):
+    pem, _ = keypair
+
+    def handler(request):
+        if request.url.path == "/start":
+            # The redirector in front identifies as nginx...
+            return httpx.Response(
+                302,
+                headers={"Location": "https://remote.example/real", "Server": "nginx"},
+            )
+        # ...but we want the software of the host that actually served the doc.
+        return httpx.Response(200, json={"ok": True}, headers={"Server": "Mastodon"})
+
+    body, headers = await make_client(handler, pem).get_with_headers(
+        "https://remote.example/start"
+    )
+
+    assert body == {"ok": True}
+    assert headers["server"] == "Mastodon"
+
+
+# ---------------------------------------------------------------------------
 # Errors
 # ---------------------------------------------------------------------------
 

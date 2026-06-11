@@ -21,7 +21,11 @@ class ActivityPubClient:
         self.client = httpx.AsyncClient(transport=transport)
 
     async def get(self, url):
-        return await self._get(url, MAX_RECURSIONS)
+        json, _ = await self._get_with_headers(url, MAX_RECURSIONS)
+        return json
+
+    async def get_with_headers(self, url):
+        return await self._get_with_headers(url, MAX_RECURSIONS)
 
     async def aclose(self):
         await self.client.aclose()
@@ -37,7 +41,7 @@ class ActivityPubClient:
         else:
             return self.general.next_available(origin)
 
-    async def _get(self, url, recursions_left):
+    async def _get_with_headers(self, url, recursions_left):
         parts = urlsplit(url)
         host = parts.netloc
         origin = f"https://{host}"
@@ -57,8 +61,8 @@ class ActivityPubClient:
         if 300 <= response.status_code < 400:
             if recursions_left <= 0:
                 raise httpx.TooManyRedirects("Too many redirects")
-            return await self._get(
+            return await self._get_with_headers(
                 urljoin(url, response.headers["Location"]), recursions_left - 1
             )
         response.raise_for_status()
-        return response.json()
+        return response.json(), response.headers
