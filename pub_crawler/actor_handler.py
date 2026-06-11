@@ -1,7 +1,7 @@
 from pub_crawler.handler import Handler
 from datetime import datetime, timezone
 from urllib.parse import urlparse
-
+import httpx
 
 class ActorHandler(Handler):
 
@@ -19,7 +19,16 @@ class ActorHandler(Handler):
         )
         if last_fetch_date:
             return
-        json = await self.client.get(actor_id)
+        try:
+            json = await self.client.get(actor_id)
+        except httpx.HTTPStatusError as err:
+            await self.graph.set_node_property(
+                actor_id, "http_status", err.response.status_code
+            )
+            return
+        await self.graph.set_node_property(
+            actor_id, "http_status", 200
+        )
         await self.graph.set_node_property(
             actor_id, "last_fetch_date", datetime.now(timezone.utc).isoformat()
         )

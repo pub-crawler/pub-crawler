@@ -19,6 +19,7 @@ Assumed contract (flag if different):
        direction:'followers'|'following', depth:<actor's depth>}
 """
 
+import httpx
 import pytest
 
 from pub_crawler.actor_handler import ActorHandler
@@ -52,6 +53,15 @@ def collection_job(collection_id, direction, depth):
 
 
 NA_RESULT = 4242
+
+
+def http_status_error(status):
+    """The typed error httpx raises from response.raise_for_status() — carries
+    the code at .response.status_code."""
+    request = httpx.Request("GET", ACTOR_ID)
+    return httpx.HTTPStatusError(
+        f"{status}", request=request, response=httpx.Response(status, request=request)
+    )
 
 
 class FakeActivityPubClient:
@@ -204,6 +214,37 @@ async def test_fetch_failure_propagates_and_leaves_node_unstamped():
         await make_handler(client, graph, dis).handle(actor_job(ACTOR_ID, 0))
 
     assert await graph.get_node_property(ACTOR_ID, "last_fetch_date") is None
+    assert dis.enqueued == []
+
+
+# ---------------------------------------------------------------------------
+# HTTP status: record reachability (410 == permanently gone, derived downstream)
+#   200            -> http_status 200
+#   404/410/403/401 (typed HTTPStatusError) -> caught, recorded, NOT propagated
+#   non-HTTP errors still propagate (see test_fetch_failure_propagates...)
+# ---------------------------------------------------------------------------
+
+
+async def test_records_http_status_200_on_success():
+    client = FakeActivityPubClient()
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
+
+    assert await graph.get_node_property(ACTOR_ID, "http_status") == 200
+
+
+@pytest.mark.parametrize("status", [404, 410, 403, 401])
+async def test_records_http_status_for_error_responses(status):
+    client = FakeActivityPubClient(error=http_status_error(status))
+    graph = FakeGraph()
+    dis = FakeDispatcher()
+
+    # Caught and recorded, NOT propagated — no actor doc, so nothing enqueued.
+    # (410 == gone is a downstream read of this code, not a separate property.)
+    await make_handler(client, graph, dis).handle(actor_job(ACTOR_ID, 0))
+
+    assert await graph.get_node_property(ACTOR_ID, "http_status") == status
     assert dis.enqueued == []
 
 
