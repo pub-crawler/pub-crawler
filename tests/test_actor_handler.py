@@ -53,6 +53,7 @@ def collection_job(collection_id, direction, depth):
 
 
 NA_RESULT = 4242
+SERVER = "Mastodon"
 
 
 def http_status_error(status):
@@ -65,17 +66,23 @@ def http_status_error(status):
 
 
 class FakeActivityPubClient:
-    def __init__(self, actor=ACTOR, error=None):
+    def __init__(self, actor=ACTOR, error=None, headers=None):
         self.actor = actor
         self.error = error
+        # httpx.Headers is case-insensitive, like a real response's headers.
+        self.headers = httpx.Headers({} if headers is None else headers)
         self.calls = []
         self.na_calls = []
 
-    async def get(self, url):
+    async def get_with_headers(self, url):
         self.calls.append(url)
         if self.error is not None:
             raise self.error
-        return self.actor
+        return self.actor, self.headers
+
+    async def get(self, url):
+        json, _ = await self.get_with_headers(url)
+        return json
 
     def next_available(self, url):
         self.na_calls.append(url)
@@ -175,6 +182,26 @@ async def test_hostname_is_lowercased_without_port():
     await make_handler(client, graph, FakeDispatcher()).handle(actor_job(actor_id, 0))
 
     assert await graph.get_node_property(actor_id, "hostname") == "example.com"
+
+
+async def test_records_server_software_from_the_server_header():
+    # Comes off the response's Server header, not the actor doc.
+    client = FakeActivityPubClient(headers={"Server": SERVER})
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
+
+    assert await graph.get_node_property(ACTOR_ID, "server") == SERVER
+
+
+async def test_absent_server_header_leaves_server_unset():
+    # The Server header is frequently stripped -> no property, not a blank string.
+    client = FakeActivityPubClient(headers={})  # no Server header
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
+
+    assert await graph.get_node_property(ACTOR_ID, "server") is None
 
 
 async def test_enriches_an_existing_bare_node():

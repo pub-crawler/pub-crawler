@@ -20,7 +20,7 @@ class ActorHandler(Handler):
         if last_fetch_date:
             return
         try:
-            json = await self.client.get(actor_id)
+            json, headers = await self.client.get_with_headers(actor_id)
         except httpx.HTTPStatusError as err:
             await self.graph.set_node_property(
                 actor_id, "http_status", err.response.status_code
@@ -42,6 +42,7 @@ class ActorHandler(Handler):
         await self._set_prop(actor_id, json, "type")
         await self._set_prop(actor_id, json, "indexable")
         await self._set_prop(actor_id, json, "discoverable")
+        await self._set_prop(actor_id, headers, "server")
         followers = json.get("followers", None)
         if followers:
             await self.graph.set_node_property(actor_id, "followers", followers)
