@@ -1,4 +1,5 @@
 from pub_crawler.handler import Handler
+import httpx
 
 
 class CollectionHandler(Handler):
@@ -15,12 +16,21 @@ class CollectionHandler(Handler):
         direction = job["direction"]
         depth = job["depth"]
         await self.graph.ensure_node(owner_id)
-        json = await self.client.get(collection_id)
+        try:
+            json = await self.client.get(collection_id)
+        except httpx.HTTPStatusError as err:
+            await self.graph.set_node_property(
+                owner_id, f"{direction}_http_status", err.response.status_code
+            )
+            return
+        await self.graph.set_node_property(owner_id, f"{direction}_http_status", 200)
         await self._set_prop(owner_id, json, f"{direction}_count", "totalItems")
         if depth < self.max_depth:
             first = json.get("first", None)
             if first:
-                await self.graph.set_node_property(owner_id, f"{direction}_members_shared", True)
+                await self.graph.set_node_property(
+                    owner_id, f"{direction}_members_shared", True
+                )
                 await self.dispatcher.enqueue(
                     {
                         "job_type": "page",
@@ -33,7 +43,9 @@ class CollectionHandler(Handler):
             else:
                 items = json.get("items", json.get("orderedItems", None))
                 if items:
-                    await self.graph.set_node_property(owner_id, f"{direction}_members_shared", True)
+                    await self.graph.set_node_property(
+                        owner_id, f"{direction}_members_shared", True
+                    )
                     for item in items:
                         if type(item) == dict:
                             id = item["id"]
@@ -65,7 +77,9 @@ class CollectionHandler(Handler):
                                 }
                             )
                 else:
-                    await self.graph.set_node_property(owner_id, f"{direction}_members_shared", False)
+                    await self.graph.set_node_property(
+                        owner_id, f"{direction}_members_shared", False
+                    )
 
     def next_available(self, job):
         return self.client.next_available(job["collection_id"])

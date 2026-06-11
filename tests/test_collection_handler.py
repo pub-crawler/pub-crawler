@@ -30,6 +30,7 @@ Assumed contract (flag if different):
           enqueue {job_type:'actor', actor_id, depth+1}
 """
 
+import httpx
 import pytest
 
 from pub_crawler.collection_handler import CollectionHandler
@@ -102,6 +103,15 @@ def hidden_collection(collection_id, total=TOTAL):
 
 
 NA_RESULT = 4242
+
+
+def http_status_error(status, url):
+    """The typed error httpx raises from response.raise_for_status() — carries
+    the code at .response.status_code."""
+    request = httpx.Request("GET", url)
+    return httpx.HTTPStatusError(
+        f"{status}", request=request, response=httpx.Response(status, request=request)
+    )
 
 
 class FakeActivityPubClient:
@@ -419,6 +429,52 @@ async def test_collection_without_members_marks_members_not_shared(
     # The count is still recorded — hidden-but-counted is a real state — and with
     # nothing to walk, nothing is enqueued.
     assert await graph.get_node_property(OWNER_ID, f"{direction}_count") == TOTAL
+    assert dis.enqueued == []
+
+
+# ---------------------------------------------------------------------------
+# HTTP status of the collection fetch, keyed by direction
+#   200            -> {direction}_http_status 200
+#   404/410/403/401 (typed HTTPStatusError) -> caught, recorded, NOT propagated
+#   non-HTTP errors still propagate (see test_fetch_failure_propagates)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "direction, collection_id",
+    [("followers", FOLLOWERS_ID), ("following", FOLLOWING_ID)],
+)
+async def test_records_http_status_200_on_success(direction, collection_id):
+    client = FakeActivityPubClient(doc=collection(collection_id))
+    dis = FakeDispatcher()
+    graph = FakeGraph()
+    await graph.ensure_node(OWNER_ID)
+
+    await make_handler(client, dis, graph).handle(
+        collection_job(collection_id, direction, 0)
+    )
+
+    assert await graph.get_node_property(OWNER_ID, f"{direction}_http_status") == 200
+
+
+@pytest.mark.parametrize(
+    "direction, collection_id",
+    [("followers", FOLLOWERS_ID), ("following", FOLLOWING_ID)],
+)
+@pytest.mark.parametrize("status", [404, 410, 403, 401])
+async def test_records_http_status_for_error_responses(status, direction, collection_id):
+    client = FakeActivityPubClient(error=http_status_error(status, collection_id))
+    dis = FakeDispatcher()
+    graph = FakeGraph()
+    await graph.ensure_node(OWNER_ID)
+
+    # Caught and recorded, NOT propagated — no doc, so no count and no enqueue.
+    await make_handler(client, dis, graph).handle(
+        collection_job(collection_id, direction, 0)
+    )
+
+    assert await graph.get_node_property(OWNER_ID, f"{direction}_http_status") == status
+    assert await graph.get_node_property(OWNER_ID, f"{direction}_count") is None
     assert dis.enqueued == []
 
 
