@@ -1,4 +1,5 @@
 from pub_crawler.handler import Handler
+import httpx
 
 
 class PageHandler(Handler):
@@ -14,8 +15,23 @@ class PageHandler(Handler):
         direction = job["direction"]
         depth = job["depth"]
         await self.graph.ensure_node(owner_id)
-        json = await self.client.get(page_id)
+        await self.graph.set_node_property(owner_id, f"{direction}_last_page", page_id)
+        await self.graph.set_node_property(
+            owner_id, f"{direction}_pages_complete", False
+        )
+        try:
+            json = await self.client.get(page_id)
+        except httpx.HTTPStatusError as err:
+            await self.graph.set_node_property(
+                owner_id, f"{direction}_last_page_http_status", err.response.status_code
+            )
+            return
+        await self.graph.set_node_property(
+            owner_id, f"{direction}_last_page_http_status", 200
+        )
+
         next = json.get("next", None)
+
         if next:
             await self.dispatcher.enqueue(
                 {
@@ -26,6 +42,11 @@ class PageHandler(Handler):
                     "depth": depth,
                 }
             )
+        else:
+            await self.graph.set_node_property(
+                owner_id, f"{direction}_pages_complete", True
+            )
+
         items = json.get("items", None)
         if not items:
             items = json.get("orderedItems", None)

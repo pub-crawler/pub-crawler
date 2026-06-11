@@ -21,6 +21,7 @@ Assumed contract (flag if different):
         enqueue {job_type:'page', page_id:next, owner_id, direction, depth: job.depth}
 """
 
+import httpx
 import pytest
 
 from pub_crawler.page_handler import PageHandler
@@ -67,6 +68,15 @@ def next_page_job(next_id):
 
 
 NA_RESULT = 4242
+
+
+def http_status_error(status, url):
+    """The typed error httpx raises from response.raise_for_status() — carries
+    the code at .response.status_code."""
+    request = httpx.Request("GET", url)
+    return httpx.HTTPStatusError(
+        f"{status}", request=request, response=httpx.Response(status, request=request)
+    )
 
 
 class FakeActivityPubClient:
@@ -191,6 +201,68 @@ async def test_no_next_means_no_page_job():
 
     page_jobs = [j for j in dis.enqueued if j["job_type"] == "page"]
     assert page_jobs == []
+
+
+# ---------------------------------------------------------------------------
+# Page-walk progress recorded on the owner node, keyed by direction
+#   {direction}_last_page             -> the page just visited
+#   {direction}_last_page_http_status -> its fetch status (200, or error code)
+#   {direction}_pages_complete        -> True only when the last visited page was
+#                                        a successful terminal page (no `next`)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("direction", ["followers", "following"])
+async def test_records_last_page_and_marks_complete_on_a_terminal_page(direction):
+    client = FakeActivityPubClient(doc=page_doc([ITEM_A]))  # no next
+    graph = FakeGraph()
+    await graph.ensure_node(OWNER_ID)
+
+    await PageHandler(client, FakeDispatcher(), graph).handle(input_job(direction))
+
+    assert await graph.get_node_property(OWNER_ID, f"{direction}_last_page") == PAGE_ID
+    assert (
+        await graph.get_node_property(OWNER_ID, f"{direction}_last_page_http_status")
+        == 200
+    )
+    # No `next` -> we reached the end.
+    assert await graph.get_node_property(OWNER_ID, f"{direction}_pages_complete") is True
+
+
+@pytest.mark.parametrize("direction", ["followers", "following"])
+async def test_pages_incomplete_while_a_next_remains(direction):
+    client = FakeActivityPubClient(doc=page_doc([ITEM_A], next_id=NEXT_ID))
+    graph = FakeGraph()
+    await graph.ensure_node(OWNER_ID)
+
+    await PageHandler(client, FakeDispatcher(), graph).handle(input_job(direction))
+
+    # Visited this page fine, but there's more to come -> not complete yet.
+    assert await graph.get_node_property(OWNER_ID, f"{direction}_last_page") == PAGE_ID
+    assert (
+        await graph.get_node_property(OWNER_ID, f"{direction}_pages_complete") is False
+    )
+
+
+@pytest.mark.parametrize("status", [404, 410, 403, 401])
+async def test_records_status_and_marks_incomplete_on_a_page_error(status):
+    client = FakeActivityPubClient(error=http_status_error(status, PAGE_ID))
+    dis = FakeDispatcher()
+    graph = FakeGraph()
+    await graph.ensure_node(OWNER_ID)
+
+    # Caught and recorded, NOT propagated — a failed fetch never reaches the end.
+    await PageHandler(client, dis, graph).handle(input_job())
+
+    assert await graph.get_node_property(OWNER_ID, f"{DIRECTION}_last_page") == PAGE_ID
+    assert (
+        await graph.get_node_property(OWNER_ID, f"{DIRECTION}_last_page_http_status")
+        == status
+    )
+    assert (
+        await graph.get_node_property(OWNER_ID, f"{DIRECTION}_pages_complete") is False
+    )
+    assert dis.enqueued == []
 
 
 def test_next_available_delegates_to_the_client_for_the_page_url():
