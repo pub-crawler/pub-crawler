@@ -1,5 +1,6 @@
 from pub_crawler.handler import Handler
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 
 class ActorHandler(Handler):
@@ -23,6 +24,9 @@ class ActorHandler(Handler):
             actor_id, "last_fetch_date", datetime.now(timezone.utc).isoformat()
         )
         await self.graph.set_node_property(actor_id, "depth", depth)
+        await self.graph.set_node_property(
+            actor_id, "hostname", urlparse(actor_id).hostname
+        )
         await self._set_prop(actor_id, json, "preferredUsername")
         await self._set_prop(actor_id, json, "name")
         await self._set_prop(actor_id, json, "published")

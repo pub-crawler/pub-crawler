@@ -143,6 +143,30 @@ async def test_omitted_indexable_and_discoverable_stay_absent(prop):
     assert await graph.get_node_property(ACTOR_ID, prop) is None
 
 
+async def test_derives_hostname_from_the_actor_id():
+    # Not carried on the actor doc — parsed out of the id URI's authority.
+    client = FakeActivityPubClient()
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
+
+    # ACTOR_ID == "https://cosocial.ca/users/evan"
+    assert await graph.get_node_property(ACTOR_ID, "hostname") == "cosocial.ca"
+
+
+async def test_hostname_is_lowercased_without_port():
+    # A noisy id: uppercase host + explicit port -> port-less, lowercased host,
+    # so actors group cleanly by server (urlparse(...).hostname, not netloc).
+    actor_id = "https://Example.COM:8443/users/bob"
+    actor = {**ACTOR, "id": actor_id}
+    client = FakeActivityPubClient(actor=actor)
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(actor_job(actor_id, 0))
+
+    assert await graph.get_node_property(actor_id, "hostname") == "example.com"
+
+
 async def test_enriches_an_existing_bare_node():
     client = FakeActivityPubClient()
     graph = FakeGraph()
