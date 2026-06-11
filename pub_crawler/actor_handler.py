@@ -27,6 +27,8 @@ class ActorHandler(Handler):
         await self._set_prop(actor_id, json, "name")
         await self._set_prop(actor_id, json, "published")
         await self._set_prop(actor_id, json, "type")
+        await self._set_prop(actor_id, json, "indexable")
+        await self._set_prop(actor_id, json, "discoverable")
         followers = json.get("followers", None)
         if followers:
             await self.graph.set_node_property(actor_id, "followers", followers)
@@ -56,6 +58,5 @@ class ActorHandler(Handler):
         return self.client.next_available(job["actor_id"])
 
     async def _set_prop(self, actor_id, json, prop):
-        value = json.get(prop, None)
-        if value:
-            await self.graph.set_node_property(actor_id, prop, value)
+        if prop in json:
+            await self.graph.set_node_property(actor_id, prop, json.get(prop))

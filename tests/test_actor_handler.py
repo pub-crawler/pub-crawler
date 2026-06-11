@@ -107,6 +107,42 @@ async def test_stamps_node_with_the_crawl_depth(depth):
     assert await graph.get_node_property(ACTOR_ID, "depth") == depth
 
 
+@pytest.mark.parametrize("prop", ["indexable", "discoverable"])
+async def test_stamps_indexable_and_discoverable_flags(prop):
+    actor = {**ACTOR, "indexable": True, "discoverable": True}
+    client = FakeActivityPubClient(actor=actor)
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
+
+    assert await graph.get_node_property(ACTOR_ID, prop) is True
+
+
+@pytest.mark.parametrize("prop", ["indexable", "discoverable"])
+async def test_stamps_indexable_and_discoverable_when_false(prop):
+    # The privacy-relevant case: an explicit `false` must be recorded as False,
+    # NOT dropped — a non-discoverable actor must be distinguishable from one
+    # that simply omits the field.
+    actor = {**ACTOR, "indexable": False, "discoverable": False}
+    client = FakeActivityPubClient(actor=actor)
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
+
+    assert await graph.get_node_property(ACTOR_ID, prop) is False
+
+
+@pytest.mark.parametrize("prop", ["indexable", "discoverable"])
+async def test_omitted_indexable_and_discoverable_stay_absent(prop):
+    # No field on the actor -> no property on the node (absent != False).
+    client = FakeActivityPubClient(actor=ACTOR)  # ACTOR carries neither flag
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
+
+    assert await graph.get_node_property(ACTOR_ID, prop) is None
+
+
 async def test_enriches_an_existing_bare_node():
     client = FakeActivityPubClient()
     graph = FakeGraph()
