@@ -14,9 +14,10 @@ import asyncio
 import redis.asyncio
 import asyncpg
 
-KEY_ID = "https://crawler.pub/actor#main-key"
-MAX_DEPTH = 1
-MAX_WORKERS = 25
+DEFAULT_KEY_ID = "https://crawler.pub/actor#main-key"
+DEFAULT_PRIVATE_KEY_PEM_FILENAME = "private.pem"
+DEFAULT_MAX_DEPTH = 1
+DEFAULT_MAX_WORKERS = 25
 
 
 def make_dispatcher(
@@ -24,16 +25,14 @@ def make_dispatcher(
     G,
     *,
     transport=None,
-    key_id=KEY_ID,
-    private_key_pem=None,
-    max_depth=MAX_DEPTH,
+    key_id=DEFAULT_KEY_ID,
+    private_key_pem_data,
+    max_depth=DEFAULT_MAX_DEPTH,
 ):
-    if private_key_pem is None:
-        private_key_pem = Path("private.pem").read_text()  # CLI default
     general = FixedWindowCounter(300, 5 * 60 * 1000)
     paged = FixedWindowCounter(300, 15 * 60 * 1000)
     wfc = WebfingerClient(general, transport=transport)
-    ac = ActivityPubClient(key_id, private_key_pem, general, paged, transport=transport)
+    ac = ActivityPubClient(key_id, private_key_pem_data, general, paged, transport=transport)
     dispatcher = Dispatcher(redis)
     dispatcher.set_handler("webfinger", WebfingerHandler(wfc, dispatcher, G))
     dispatcher.set_handler("actor", ActorHandler(ac, dispatcher, G))
@@ -56,7 +55,7 @@ async def worker(name, dispatcher):
         await dispatcher.done(job)
 
 
-async def crawl_graph(dispatcher, *, max_workers=MAX_WORKERS):
+async def crawl_graph(dispatcher, *, max_workers=DEFAULT_MAX_WORKERS):
 
     workers = []
     for i in range(max_workers):
@@ -70,7 +69,16 @@ async def crawl_graph(dispatcher, *, max_workers=MAX_WORKERS):
     await asyncio.gather(*workers, return_exceptions=True)
 
 
-async def main(redis_url, database_url):
+async def main(
+    redis_url,
+    database_url,
+    *,
+    max_depth=DEFAULT_MAX_DEPTH,
+    max_workers=DEFAULT_MAX_WORKERS,
+    key_id=DEFAULT_KEY_ID,
+    private_key_pem_filename=DEFAULT_PRIVATE_KEY_PEM_FILENAME,
+):
+    private_key_pem_data = Path(private_key_pem_filename).read_text()
 
     r = redis.asyncio.Redis.from_url(redis_url)
     pool = await asyncpg.create_pool(database_url)
@@ -79,7 +87,16 @@ async def main(redis_url, database_url):
     G = DatabaseGraph(pool)
 
     try:
-        await crawl_graph(make_dispatcher(r, G))
+        await crawl_graph(
+            make_dispatcher(
+                r,
+                G,
+                key_id=key_id,
+                private_key_pem_data=private_key_pem_data,
+                max_depth=max_depth,
+            ),
+            max_workers=max_workers,
+        )
     finally:
         await pool.close()
 
@@ -87,17 +104,63 @@ async def main(redis_url, database_url):
 if __name__ == "__main__":
     import os
     import sys
+    import argparse
 
-    database_url = os.environ.get("DATABASE_URL")
+    parser = argparse.ArgumentParser(
+        description="Crawl the Fediverse follower/following graph."
+    )
+    parser.add_argument(
+        "--database-url",
+        default=os.environ.get("DATABASE_URL"),
+        help="PostgreSQL connection URL (env: DATABASE_URL)",
+    )
+    parser.add_argument(
+        "--redis-url",
+        default=os.environ.get("REDIS_URL"),
+        help="Redis connection URL (env: REDIS_URL)",
+    )
+    parser.add_argument(
+        "--key-id",
+        default=os.environ.get("KEY_ID", DEFAULT_KEY_ID),
+        help=f"HTTP Signature key id (env: KEY_ID, default: {DEFAULT_KEY_ID})",
+    )
+    parser.add_argument(
+        "--private-key-pem",
+        default=os.environ.get("PRIVATE_KEY_PEM", DEFAULT_PRIVATE_KEY_PEM_FILENAME),
+        help="path to the PEM private key file "
+        f"(env: PRIVATE_KEY_PEM, default: {DEFAULT_PRIVATE_KEY_PEM_FILENAME})",
+    )
+    parser.add_argument(
+        "--max-depth",
+        type=int,
+        default=int(os.environ.get("MAX_DEPTH", DEFAULT_MAX_DEPTH)),
+        help="how many hops out from the seed to follow "
+        f"(env: MAX_DEPTH, default: {DEFAULT_MAX_DEPTH})",
+    )
+    parser.add_argument(
+        "--max-workers",
+        type=int,
+        default=int(os.environ.get("MAX_WORKERS", DEFAULT_MAX_WORKERS)),
+        help="number of concurrent worker tasks "
+        f"(env: MAX_WORKERS, default: {DEFAULT_MAX_WORKERS})",
+    )
+    args = parser.parse_args()
 
-    if not database_url:
-        print("Set DATABASE_URL environment variable")
+    if not args.database_url:
+        print("Set DATABASE_URL environment variable or pass --database-url")
         sys.exit(1)
 
-    redis_url = os.environ.get("REDIS_URL")
-
-    if not redis_url:
-        print("Set REDIS_URL environment variable")
+    if not args.redis_url:
+        print("Set REDIS_URL environment variable or pass --redis-url")
         sys.exit(1)
 
-    asyncio.run(main(redis_url, database_url))
+    asyncio.run(
+        main(
+            args.redis_url,
+            args.database_url,
+            max_depth=args.max_depth,
+            max_workers=args.max_workers,
+            key_id=args.key_id,
+            private_key_pem_filename=args.private_key_pem,
+        )
+    )

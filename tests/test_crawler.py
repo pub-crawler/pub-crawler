@@ -8,10 +8,10 @@ handlers' writes — so we assert the graph the crawl actually built. (GML outpu
 is test_snapshot's job, not this one.)
 
 Assumed contract (flag if different):
-  make_dispatcher(redis, graph, *, transport=None) -> Dispatcher
+  make_dispatcher(redis, graph, *, transport=None, private_key_pem_data) -> Dispatcher
       (counters, clients, all four handlers registered — the test passes a
-       redis-y thing, a graph-y thing, and a transport-y thing; the rest is
-       crawler.py's to build)
+       redis-y thing, a graph-y thing, a transport-y thing, and the signing key
+       contents; the rest is crawler.py's to build)
   async crawl_graph(dispatcher)
       creates the worker pool, drains the queue (join), winds the workers down
 """
@@ -84,10 +84,14 @@ def crawl_handler(request):
     return httpx.Response(404, json={})
 
 
-async def test_crawl_builds_the_graph_from_a_seed():
+async def test_crawl_builds_the_graph_from_a_seed(keypair):
+    pem, _ = keypair
     graph = FakeGraph()
     dispatcher = make_dispatcher(
-        fake_redis(), graph, transport=httpx.MockTransport(crawl_handler)
+        fake_redis(),
+        graph,
+        transport=httpx.MockTransport(crawl_handler),
+        private_key_pem_data=pem,
     )
 
     # Seed one webfinger and let the crawl run to completion.
