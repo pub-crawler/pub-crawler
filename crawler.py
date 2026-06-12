@@ -53,7 +53,7 @@ async def worker(name, dispatcher):
         except Exception as e:
             logging.warning(e)
             pass
-        dispatcher.done(job)
+        await dispatcher.done(job)
 
 
 async def crawl_graph(dispatcher, *, max_workers=MAX_WORKERS):

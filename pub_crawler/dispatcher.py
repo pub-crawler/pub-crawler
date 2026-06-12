@@ -12,9 +12,10 @@ def _sleep_ms(ms):
 
 
 QUEUE = "pub_crawler:queue"
+INFLIGHT = "pub_crawler:inflight"
 MAX_CLIENTS = 25
 TIME_PER_JOB = 100
-
+MAX_INFLIGHT = 15 * 60 * 1000
 
 class Dispatcher:
     def __init__(self, redis, now=_epoch_ms, sleep=_sleep_ms):
@@ -23,7 +24,6 @@ class Dispatcher:
         self.sleep = sleep
         self._handlers = dict()
         self._count = -1
-        self._in_flight = 0
 
     def set_handler(self, job_type, handler):
         self._handlers[job_type] = handler
@@ -33,9 +33,10 @@ class Dispatcher:
         await handler.handle(job)
 
     async def enqueue(self, job):
+        await self._remove_inflight(job)
         handler = self._get_handler(job)
         next_available = handler.next_available(job)
-        member = f"{self._counter()}:{json.dumps(job)}"
+        member = f"{self._counter()}:{self._job_to_str(job)}"
         await self.redis.zadd(QUEUE, {member: next_available})
 
     async def get(self):
@@ -48,26 +49,41 @@ class Dispatcher:
             counter = int(counter_str)
             job = json.loads(job_json)
             if next_available > self.now():
-                self._in_flight += 1
+                await self._add_inflight(job)
                 return job
             handler = self._get_handler(job)
             next_available = handler.next_available(job)
             if next_available <= self.now():
-                self._in_flight += 1
+                await self._add_inflight(job)
                 return job
             else:
                 await self.redis.zadd(QUEUE, {member: next_available})
 
-    def done(self, job):
-        self._in_flight -= 1
+    async def done(self, job):
+        await self._remove_inflight(job)
 
     async def join(self):
-        job_count = await self.redis.zcard(QUEUE)
-        while job_count > 0 or self._in_flight > 0:
-            await self.sleep(
-                ((job_count + self._in_flight) * TIME_PER_JOB) / MAX_CLIENTS
-            )
+        while True:
             job_count = await self.redis.zcard(QUEUE)
+            inflight_count = await self._inflight_count()
+            if job_count > 0 or inflight_count > 0:
+                await self.sleep(
+                    ((job_count + inflight_count) * TIME_PER_JOB) / MAX_CLIENTS
+                )
+            else:
+                break
+
+    async def inflight(self):
+        return list(map(self._str_to_job, await self.redis.hkeys(INFLIGHT)))
+
+    async def expired(self):
+        exp = []
+        now = self.now()
+        for jobstr, expiryb in (await self.redis.hgetall(INFLIGHT)).items():
+            expiry = float(expiryb)
+            if expiry < now:
+                exp.append(self._str_to_job(jobstr))
+        return exp
 
     def _get_handler(self, job):
         handler = self._handlers.get(job["job_type"], None)
@@ -78,3 +94,19 @@ class Dispatcher:
     def _counter(self):
         self._count += 1
         return self._count
+
+    async def _add_inflight(self, job):
+        expected = self.now() + MAX_INFLIGHT
+        await self.redis.hset(INFLIGHT, self._job_to_str(job), expected)
+
+    async def _remove_inflight(self, job):
+        await self.redis.hdel(INFLIGHT, self._job_to_str(job))
+
+    async def _inflight_count(self):
+        return await self.redis.hlen(INFLIGHT)
+
+    def _job_to_str(self, job):
+        return json.dumps(job, sort_keys=True)
+
+    def _str_to_job(self, string):
+        return json.loads(string)

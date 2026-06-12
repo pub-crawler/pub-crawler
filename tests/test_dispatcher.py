@@ -21,7 +21,7 @@ import asyncio
 import pytest
 from fakeredis import FakeAsyncRedis, FakeServer
 
-from pub_crawler.dispatcher import Dispatcher
+from pub_crawler.dispatcher import Dispatcher, MAX_INFLIGHT
 
 
 def fake_redis():
@@ -41,6 +41,16 @@ class FakeHandler:
 
     async def handle(self, job):
         self.handled.append(job)
+
+
+class Clock:
+    """A controllable clock for lease/expiry tests; advance by setting .t."""
+
+    def __init__(self, t=0):
+        self.t = t
+
+    def __call__(self):
+        return self.t
 
 
 def actor_job():
@@ -155,7 +165,7 @@ async def test_join_returns_once_the_queue_is_drained():
         for _ in range(2):
             job = await dis.get()
             await dis.dispatch(job)
-            dis.done(job)
+            await dis.done(job)
 
     worker = asyncio.create_task(drain())
 
@@ -164,3 +174,172 @@ async def test_join_returns_once_the_queue_is_drained():
     await worker
 
     assert len(h.handled) == 2
+
+
+# ---------------------------------------------------------------------------
+# In-flight tracking: get() leases a job, done()/re-enqueue release it.
+#   inflight() -> the jobs taken by get() but not yet released (async; reads
+#   Redis so it survives a crash). Order isn't promised; membership + count are.
+# ---------------------------------------------------------------------------
+
+
+async def test_inflight_is_empty_before_anything_is_taken():
+    dis = Dispatcher(fake_redis())
+    dis.set_handler("actor", FakeHandler())
+
+    assert await dis.inflight() == []
+
+
+async def test_get_puts_the_job_in_flight():
+    dis = Dispatcher(fake_redis())
+    dis.set_handler("actor", FakeHandler())
+    await dis.enqueue(actor_job())
+
+    job = await dis.get()
+
+    assert await dis.inflight() == [job]
+
+
+async def test_done_takes_the_job_out_of_flight():
+    dis = Dispatcher(fake_redis())
+    dis.set_handler("actor", FakeHandler())
+    await dis.enqueue(actor_job())
+    job = await dis.get()
+    assert await dis.inflight() == [job]
+
+    await dis.done(job)
+
+    assert await dis.inflight() == []
+
+
+async def test_inflight_lists_every_job_currently_in_flight():
+    dis = Dispatcher(fake_redis())
+    dis.set_handler("actor", FakeHandler())
+    a = {"job_type": "actor", "tag": "a"}
+    b = {"job_type": "actor", "tag": "b"}
+    await dis.enqueue(a)
+    await dis.enqueue(b)
+
+    ja = await dis.get()
+    jb = await dis.get()
+
+    flight = await dis.inflight()
+    assert len(flight) == 2
+    assert ja in flight
+    assert jb in flight
+
+
+async def test_re_enqueuing_an_in_flight_job_releases_it():
+    # A handler that defers its own job (e.g. retry-after) re-enqueues it: that
+    # takes it back out of flight and returns it to the queue.
+    dis = Dispatcher(fake_redis())
+    dis.set_handler("actor", FakeHandler())
+    await dis.enqueue(actor_job())
+    job = await dis.get()
+    assert await dis.inflight() == [job]
+
+    await dis.enqueue(job)
+
+    # No longer in flight...
+    assert await dis.inflight() == []
+    # ...but back on the queue, ready to be taken again.
+    assert await dis.get() == job
+
+
+async def test_join_blocks_until_the_inflight_list_empties():
+    # The queue can be empty while a job is still being worked: join() must wait
+    # for the in-flight job to finish, not merely for the queue to drain.
+    dis = Dispatcher(fake_redis())
+    dis.set_handler("actor", FakeHandler())
+    await dis.enqueue(actor_job())
+    job = await dis.get()  # queue now empty, but the job is in flight
+    assert await dis.inflight() == [job]
+
+    async def finish():
+        await asyncio.sleep(0.05)
+        await dis.done(job)
+
+    worker = asyncio.create_task(finish())
+    # Returns only after done() empties the in-flight list (timeout guards a hang).
+    await asyncio.wait_for(dis.join(), timeout=1.0)
+    await worker
+
+    assert await dis.inflight() == []
+
+
+# ---------------------------------------------------------------------------
+# expired(): in-flight jobs whose lease deadline (set at get(), MAX_INFLIGHT
+# out) is now in the past — the read-only surface a reaper walks. Read-only:
+# it observes, it does NOT release; re-enqueue is what recovers the job.
+# ---------------------------------------------------------------------------
+
+
+async def test_expired_lists_jobs_past_their_deadline():
+    clock = Clock(0)
+    dis = Dispatcher(fake_redis(), now=clock)
+    dis.set_handler("actor", FakeHandler())
+    await dis.enqueue(actor_job())
+    job = await dis.get()  # leased at t=0, deadline = MAX_INFLIGHT
+
+    # Still within the lease -> not expired.
+    clock.t = MAX_INFLIGHT - 1
+    assert await dis.expired() == []
+
+    # Past the lease -> expired.
+    clock.t = MAX_INFLIGHT + 1
+    assert await dis.expired() == [job]
+
+
+async def test_expired_excludes_jobs_still_within_their_lease():
+    clock = Clock(0)
+    dis = Dispatcher(fake_redis(), now=clock)
+    dis.set_handler("actor", FakeHandler())
+
+    old = {"job_type": "actor", "tag": "old"}
+    await dis.enqueue(old)
+    old_job = await dis.get()  # deadline = MAX_INFLIGHT
+
+    # Lease a second job much later, so its deadline is further out.
+    clock.t = MAX_INFLIGHT - 100
+    fresh = {"job_type": "actor", "tag": "fresh"}
+    await dis.enqueue(fresh)
+    fresh_job = await dis.get()  # deadline = 2*MAX_INFLIGHT - 100
+
+    # Step just past the OLD deadline but well short of the fresh one.
+    clock.t = MAX_INFLIGHT + 1
+    expired = await dis.expired()
+
+    assert old_job in expired
+    assert fresh_job not in expired  # per-job deadline, not all-or-nothing
+
+
+async def test_expired_excludes_a_completed_job():
+    clock = Clock(0)
+    dis = Dispatcher(fake_redis(), now=clock)
+    dis.set_handler("actor", FakeHandler())
+    await dis.enqueue(actor_job())
+    job = await dis.get()
+    await dis.done(job)  # finished -> out of flight before its lease lapses
+
+    clock.t = MAX_INFLIGHT + 1  # well past when the lease would have expired
+    assert await dis.expired() == []
+
+
+async def test_re_enqueuing_an_expired_job_recovers_it():
+    # The reaper pattern end to end: expired() finds the abandoned job, and
+    # enqueue() releases it from flight and puts it back on the queue.
+    clock = Clock(0)
+    dis = Dispatcher(fake_redis(), now=clock)
+    dis.set_handler("actor", FakeHandler())
+    await dis.enqueue(actor_job())
+    job = await dis.get()
+
+    clock.t = MAX_INFLIGHT + 1
+    [expired_job] = await dis.expired()
+    await dis.enqueue(expired_job)
+
+    # Released from flight (so no longer expired)...
+    assert await dis.inflight() == []
+    assert await dis.expired() == []
+    # ...and waiting on the queue again.
+    assert await dis.get() == job
