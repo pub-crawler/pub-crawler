@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pub Crawler</title>
+</head>
+<body>
+  <h1>Pub Crawler</h1>
+  <p>Pub Crawler is a research project by <a href="https://sites.gatech.edu/evanp">Evan Prodromou</a>, a master's degree student in Computer Science from <a href="https://gatech.edu/">Georgia Tech</a>.</p>
+  <h2>Research</h2>
+  <p>Pub Crawler is a crawler for the Fediverse -- a network of independent, interoperable social network platforms, including Mastodon, Meta Threads, Flipboard, and WordPress.</p>
+  <p>Pub Crawler follows links between <em>actors</em> on the Fediverse -- mostly people, but also bots and groups.</p>
+  <p>The data collected by Pub Crawler will be used to answer questions like:</p>
+  <ul>
+    <li>How big is the Fediverse?</li>
+    <li>Is it one connected network, or are there sub-networks that don't link to each other?</li>
+    <li>What's the average and maximum distance ("degrees of separation") between actors on the network?</li>
+    <li>What are mean and median number of followers and following of actors on the network?</li>
+  </ul>
+  <h2>Behavior</h2>
+  <p>Pub Crawler only follows social connections through the "followers" and "following" collections. It does not read content posted by the actors. It only uses public connection data.</p>
+  <p>Pub Crawler tries to minimize impact on running servers by following rate limits used by Mastodon servers: 300 requests per 5 minutes for most data, 300 requests per 15 minutes for collection pages (followers/following).</p>
+  <h2>About Evan Prodromou</h2>
+  <p>Evan is also the research director of the <a href="https://socialwebfoundation.org/">Social Web Foundation</a>, co-author of ActivityPub, and author of the book "<a href="https://evanp.me/activitypub-book/">ActivityPub: Programming for the Social Web</a>" from O'Reilly Media. He can be reached at <a href="mailto:evanp@gatech.edu">evanp@gatech.edu</a>.</p>
+</body>
+</html>
