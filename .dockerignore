@@ -1,0 +1,24 @@
+# Virtualenv / caches
+.venv
+__pycache__
+*.py[codz]
+.pytest_cache
+
+# VCS / editor / agent
+.git
+.gitignore
+.vscode
+.claude
+
+# Secrets — mounted as a K8s Secret at runtime, never baked into the image
+private.pem
+
+# Crawl inputs/outputs and static actor site — not needed in the image
+data
+public
+docs
+*.gml
+
+# Project meta
+LICENSE
+README.md
