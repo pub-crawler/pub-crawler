@@ -6,12 +6,13 @@ hands to the signed ActivityPubClient. The client is async (httpx.AsyncClient),
 so get_actor_id is awaited; httpx.MockTransport intercepts the lookup and the
 sync handlers work fine under AsyncClient.
 
-A `general` FixedWindowCounter is injected (shared with ActivityPubClient, since
-both draw on the same per-IP budget) and acquired before each lookup, keyed by
-origin (scheme://host).
+Two FixedWindowCounters are injected, both shared with ActivityPubClient (same
+per-IP budget): `general` and a short-window `burst` cap. Both are acquired
+before each lookup, keyed by origin (scheme://host); the tests don't pin their
+relative order. next_available() returns the later (max) of the two.
 
 Assumed contract (adjust the tests if the shape differs):
-  WebfingerClient(general, transport=None).get_actor_id(wf) ->
+  WebfingerClient(general, burst, transport=None).get_actor_id(wf) ->
     GET https://{host}/.well-known/webfinger?resource=acct:{user}@{host}
     choose the self link by preference:
       1. type == application/activity+json
@@ -56,9 +57,10 @@ def serve(links, seen=None):
     return handler
 
 
-def make_client(handler, general=None):
+def make_client(handler, general=None, burst=None):
     return WebfingerClient(
         general or nonblocking_counter(),
+        burst or nonblocking_counter(),
         transport=httpx.MockTransport(handler),
     )
 
@@ -143,9 +145,10 @@ async def test_unknown_account_raises_http_error():
 # ---------------------------------------------------------------------------
 
 
-async def test_acquires_general_before_fetching():
+async def test_acquires_burst_and_general_before_fetching():
     log = []
-    general = SpyCounter(log, "acquire")
+    general = SpyCounter(log, "general")
+    burst = SpyCounter(log, "burst")
 
     def handler(request):
         log.append(("fetch", str(request.url)))
@@ -153,12 +156,16 @@ async def test_acquires_general_before_fetching():
             200, json={"subject": "acct:bot@crawler.pub", "links": [AP_SELF]}
         )
 
-    client = WebfingerClient(general, transport=httpx.MockTransport(handler))
+    client = WebfingerClient(general, burst, transport=httpx.MockTransport(handler))
     await client.get_actor_id("bot@crawler.pub")
 
-    # One acquire, keyed by origin (scheme://host), and it lands BEFORE the GET.
+    # Both counters acquired once, keyed by origin, before the GET; relative
+    # order isn't pinned.
     assert general.calls == ["https://crawler.pub"]
-    assert log[0] == ("acquire", "https://crawler.pub")
+    assert burst.calls == ["https://crawler.pub"]
+    assert log[-1][0] == "fetch"
+    assert ("general", "https://crawler.pub") in log[:-1]
+    assert ("burst", "https://crawler.pub") in log[:-1]
 
 
 # ---------------------------------------------------------------------------
@@ -178,22 +185,24 @@ class FakeCounter:
         return self.result
 
 
-def counter_client(counter):
+def counter_client(general, burst):
     handler = lambda request: httpx.Response(200, json={})  # never called here
-    return WebfingerClient(counter, transport=httpx.MockTransport(handler))
+    return WebfingerClient(general, burst, transport=httpx.MockTransport(handler))
 
 
 @pytest.mark.parametrize(
     "wf", ["bot@crawler.pub", "acct:bot@crawler.pub", "@bot@crawler.pub"]
 )
-def test_next_available_delegates_to_general_keyed_by_host(wf):
-    counter = FakeCounter(result=4242)
-    client = counter_client(counter)
+def test_next_available_maxes_general_and_burst_keyed_by_host(wf):
+    general = FakeCounter(result=100)
+    burst = FakeCounter(result=500)
+    client = counter_client(general, burst)
 
     result = client.next_available(wf)
 
     # Takes a webfinger (not a URL), sync (no await). Derives the host from the
-    # acct, keys the general counter by that origin (scheme://host), and passes
-    # the counter's answer straight through.
-    assert result == 4242
-    assert counter.origins == ["https://crawler.pub"]
+    # acct, keys both counters by that origin (scheme://host), and returns the
+    # later (max) of the two answers.
+    assert result == 500  # max(general=100, burst=500)
+    assert general.origins == ["https://crawler.pub"]
+    assert burst.origins == ["https://crawler.pub"]

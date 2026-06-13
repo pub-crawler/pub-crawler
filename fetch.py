@@ -20,8 +20,9 @@ async def fetch(id, *, transport=None, private_key_pem=None):
         private_key_pem = Path("private.pem").read_text()  # CLI default
     general = FixedWindowCounter(300, 5 * 60 * 1000)
     paged = FixedWindowCounter(300, 15 * 60 * 1000)
-    wf = WebfingerClient(general, transport=transport)
-    ap = ActivityPubClient(KEY_ID, private_key_pem, general, paged, transport=transport)
+    burst = FixedWindowCounter(10, 10 * 1000)
+    wf = WebfingerClient(general, burst, transport=transport)
+    ap = ActivityPubClient(KEY_ID, private_key_pem, general, paged, burst, transport=transport)
     try:
         return await _fetch(id, wf, ap)
     finally:

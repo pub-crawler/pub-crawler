@@ -6,11 +6,17 @@ signature that goes on the wire and drive every response scenario
 deterministically. The client is async (httpx.AsyncClient), so get() is awaited;
 the mock handlers stay sync (MockTransport supports that under AsyncClient).
 
-Two FixedWindowCounters are injected: `general` (shared with WebfingerClient,
-acquired for every request) and `paged` (acquired additionally when the URL
+Three FixedWindowCounters are injected: `general` (shared with WebfingerClient,
+acquired for every request), `burst` (a short-window per-origin cap, also
+acquired for every request), and `paged` (acquired additionally when the URL
 carries a `page` query param). The acquire happens per actual GET — inside the
-redirect loop — keyed by origin (scheme://host). Stricter-first: a paged request
-acquires `paged` before `general`.
+redirect loop — keyed by origin (scheme://host). The stricter-first contract
+still holds (a paged request acquires `paged` before `general`); these tests do
+NOT pin where `burst` sits in that order. next_available() returns the latest
+(max) of whichever gates apply, now including `burst`.
+
+Assumed constructor (flag if different):
+  ActivityPubClient(key_id, private_key_pem, general, paged, burst, transport=None)
 """
 
 import httpx
@@ -31,12 +37,13 @@ ORIGIN = "https://remote.example"
 PAGE_URL = "https://remote.example/users/alice/followers?page=2"
 
 
-def make_client(handler, pem, general=None, paged=None):
+def make_client(handler, pem, general=None, paged=None, burst=None):
     return ActivityPubClient(
         KEY_ID,
         pem,
         general or nonblocking_counter(),
         paged or nonblocking_counter(),
+        burst or nonblocking_counter(),
         transport=httpx.MockTransport(handler),
     )
 
@@ -247,46 +254,61 @@ async def test_aclose_closes_the_underlying_client(keypair):
 # ---------------------------------------------------------------------------
 
 
-async def test_get_acquires_general_before_fetching(keypair):
+async def test_get_acquires_burst_and_general_before_fetching(keypair):
     pem, _ = keypair
     log = []
     general = SpyCounter(log, "general")
     paged = SpyCounter(log, "paged")
+    burst = SpyCounter(log, "burst")
 
     def handler(request):
         log.append(("fetch", str(request.url)))
         return httpx.Response(200, json={})
 
-    await make_client(handler, pem, general=general, paged=paged).get(URL)
+    await make_client(handler, pem, general=general, paged=paged, burst=burst).get(URL)
 
-    # Plain (non-paged) URL: general only, keyed by origin, before the GET.
+    # Plain (non-paged) URL spends burst + general (once each, keyed by origin),
+    # never paged. Both acquires land before the GET; their order relative to one
+    # another isn't pinned.
     assert general.calls == [ORIGIN]
+    assert burst.calls == [ORIGIN]
     assert paged.calls == []
-    assert log == [("general", ORIGIN), ("fetch", URL)]
+    assert log[-1] == ("fetch", URL)
+    assert ("burst", ORIGIN) in log[:-1]
+    assert ("general", ORIGIN) in log[:-1]
 
 
-async def test_paged_url_acquires_both_paged_first(keypair):
+async def test_paged_url_acquires_paged_general_and_burst(keypair):
     pem, _ = keypair
     log = []
     general = SpyCounter(log, "general")
     paged = SpyCounter(log, "paged")
+    burst = SpyCounter(log, "burst")
 
     def handler(request):
         log.append(("fetch", str(request.url)))
         return httpx.Response(200, json={})
 
-    await make_client(handler, pem, general=general, paged=paged).get(PAGE_URL)
+    await make_client(handler, pem, general=general, paged=paged, burst=burst).get(
+        PAGE_URL
+    )
 
-    # ?page= request spends from both; stricter (paged) first, then general,
-    # then the fetch.
+    # ?page= request spends from all three, once each, keyed by origin. The
+    # stricter-first contract holds (paged before general); burst's slot is not
+    # pinned. All acquires precede the fetch.
     assert general.calls == [ORIGIN]
     assert paged.calls == [ORIGIN]
-    assert log == [("paged", ORIGIN), ("general", ORIGIN), ("fetch", PAGE_URL)]
+    assert burst.calls == [ORIGIN]
+    assert log[-1] == ("fetch", PAGE_URL)
+    labels = [entry[0] for entry in log[:-1]]
+    assert labels.index("paged") < labels.index("general")
+    assert "burst" in labels
 
 
 async def test_acquires_once_per_redirect_hop(keypair):
     pem, _ = keypair
     general = SpyCounter()
+    burst = SpyCounter()
 
     def handler(request):
         if request.url.path == "/start":
@@ -295,11 +317,14 @@ async def test_acquires_once_per_redirect_hop(keypair):
             )
         return httpx.Response(200, json={"ok": True})
 
-    await make_client(handler, pem, general=general).get("https://remote.example/start")
+    await make_client(handler, pem, general=general, burst=burst).get(
+        "https://remote.example/start"
+    )
 
     # The acquire lives in _get(), so each hop (original + redirect target)
-    # acquires independently.
+    # acquires every gate independently.
     assert general.calls == [ORIGIN, ORIGIN]
+    assert burst.calls == [ORIGIN, ORIGIN]
 
 
 # ---------------------------------------------------------------------------
@@ -319,39 +344,55 @@ class FakeCounter:
         return self.result
 
 
-def na_client(general, paged):
+def na_client(general, paged, burst):
     handler = lambda request: httpx.Response(200, json={})  # never called here
     return ActivityPubClient(
-        KEY_ID, "pem", general, paged, transport=httpx.MockTransport(handler)
+        KEY_ID, "pem", general, paged, burst, transport=httpx.MockTransport(handler)
     )
 
 
-def test_next_available_non_paged_uses_general_only():
+def test_next_available_non_paged_maxes_general_and_burst():
     general = FakeCounter(100)
     paged = FakeCounter(500)
+    burst = FakeCounter(300)
 
-    result = na_client(general, paged).next_available(URL)  # no ?page=
+    result = na_client(general, paged, burst).next_available(URL)  # no ?page=
 
-    assert result == 100  # general's answer, passed through
-    assert general.origins == [ORIGIN]  # keyed by origin (scheme://host)
-    assert paged.origins == []  # paged gate is irrelevant to a plain GET
+    # Non-paged spends general + burst -> the later of those two; paged is
+    # irrelevant to a plain GET.
+    assert result == 300  # max(general=100, burst=300)
+    assert general.origins == [ORIGIN]
+    assert burst.origins == [ORIGIN]
+    assert paged.origins == []
 
 
-def test_next_available_paged_returns_the_later_gate_paged_binding():
+def test_next_available_paged_returns_the_latest_gate_paged_binding():
     general = FakeCounter(100)
     paged = FakeCounter(500)
+    burst = FakeCounter(300)
 
-    result = na_client(general, paged).next_available(PAGE_URL)  # ?page=2
+    result = na_client(general, paged, burst).next_available(PAGE_URL)  # ?page=2
 
-    # A paged request needs BOTH tokens -> can't go until the later gate opens.
-    assert result == 500
+    # A paged request needs all three tokens -> can't go until the latest opens.
+    assert result == 500  # max(general=100, paged=500, burst=300)
     assert general.origins == [ORIGIN]
     assert paged.origins == [ORIGIN]
+    assert burst.origins == [ORIGIN]
 
 
-def test_next_available_paged_returns_the_later_gate_general_binding():
+def test_next_available_paged_returns_the_latest_gate_general_binding():
     # max() must pick general when it's the binding one.
     general = FakeCounter(900)
     paged = FakeCounter(300)
+    burst = FakeCounter(300)
 
-    assert na_client(general, paged).next_available(PAGE_URL) == 900
+    assert na_client(general, paged, burst).next_available(PAGE_URL) == 900
+
+
+def test_next_available_returns_burst_when_it_is_the_binding_gate():
+    # The short-window burst cap can be the latest gate on a rapid run.
+    general = FakeCounter(100)
+    paged = FakeCounter(200)
+    burst = FakeCounter(999)
+
+    assert na_client(general, paged, burst).next_available(PAGE_URL) == 999

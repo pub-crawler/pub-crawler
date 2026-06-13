@@ -31,8 +31,9 @@ def make_dispatcher(
 ):
     general = FixedWindowCounter(300, 5 * 60 * 1000)
     paged = FixedWindowCounter(300, 15 * 60 * 1000)
-    wfc = WebfingerClient(general, transport=transport)
-    ac = ActivityPubClient(key_id, private_key_pem_data, general, paged, transport=transport)
+    burst = FixedWindowCounter(10, 10 * 1000)
+    wfc = WebfingerClient(general, burst, transport=transport)
+    ac = ActivityPubClient(key_id, private_key_pem_data, general, paged, burst, transport=transport)
     dispatcher = Dispatcher(redis)
     dispatcher.set_handler("webfinger", WebfingerHandler(wfc, dispatcher, G))
     dispatcher.set_handler("actor", ActorHandler(ac, dispatcher, G))

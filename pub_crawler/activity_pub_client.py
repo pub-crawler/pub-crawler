@@ -11,11 +11,12 @@ ACCEPT = (
 
 class ActivityPubClient:
 
-    def __init__(self, key_id, private_key_pem, general, paged, transport=None):
+    def __init__(self, key_id, private_key_pem, general, paged, burst, transport=None):
         self.key_id = key_id
         self.private_key_pem = private_key_pem
         self.general = general
         self.paged = paged
+        self.burst = burst
         if transport is None:
             transport = httpx.AsyncHTTPTransport(retries=3)
         self.client = httpx.AsyncClient(transport=transport)
@@ -36,10 +37,15 @@ class ActivityPubClient:
         origin = f"https://{host}"
         if parts.query and "page" in parse_qs(parts.query):
             return max(
-                self.paged.next_available(origin), self.general.next_available(origin)
+                self.paged.next_available(origin),
+                self.general.next_available(origin),
+                self.burst.next_available(origin)
             )
         else:
-            return self.general.next_available(origin)
+            return max(
+                self.general.next_available(origin),
+                self.burst.next_available(origin)
+            )
 
     async def _get_with_headers(self, url, recursions_left):
         parts = urlsplit(url)
@@ -57,6 +63,7 @@ class ActivityPubClient:
         if parts.query and "page" in parse_qs(parts.query):
             await self.paged.acquire(origin)
         await self.general.acquire(origin)
+        await self.burst.acquire(origin)
         response = await self.client.get(url, headers=headers)
         if 300 <= response.status_code < 400:
             if recursions_left <= 0:

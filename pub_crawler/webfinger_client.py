@@ -9,8 +9,9 @@ MEDIA_TYPES = [
 
 
 class WebfingerClient:
-    def __init__(self, general, transport=None):
+    def __init__(self, general, burst, transport=None):
         self.general = general
+        self.burst = burst
         if transport is None:
             transport = httpx.AsyncHTTPTransport(retries=3)
         self.client = httpx.AsyncClient(transport=transport)
@@ -25,6 +26,7 @@ class WebfingerClient:
             "Accept": "application/jrd+json;q=1.0,application/json;q=0.5",
         }
         await self.general.acquire(origin)
+        await self.burst.acquire(origin)
         res = await self.client.get(url, headers=headers)
         res.raise_for_status()
         doc = res.json()
@@ -44,7 +46,10 @@ class WebfingerClient:
     def next_available(self, wf):
         hostname = wf.split("@")[-1]
         origin = f"https://{hostname}"
-        return self.general.next_available(origin)
+        return max(
+            self.general.next_available(origin),
+            self.burst.next_available(origin)
+        )
 
     def _normalize(self, wf):
         if wf[0] == "@":

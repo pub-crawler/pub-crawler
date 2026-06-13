@@ -9,8 +9,8 @@ from pub_crawler.fixed_window_counter import FixedWindowCounter
 
 async def add_seeds(input_filename, r, *, transport=None):
     general = FixedWindowCounter(300, 5 * 60 * 1000)
-
-    wfc = WebfingerClient(general, transport=transport)
+    burst = FixedWindowCounter(10, 10 * 1000)
+    wfc = WebfingerClient(general, burst, transport=transport)
     dispatcher = Dispatcher(r)
     dispatcher.set_handler("webfinger", WebfingerHandler(wfc, dispatcher, None))
 
