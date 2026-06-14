@@ -160,6 +160,78 @@ async def test_omitted_indexable_and_discoverable_stay_absent(prop):
     assert await graph.get_node_property(ACTOR_ID, prop) is None
 
 
+async def test_stamps_summary_from_the_actor_doc():
+    # The bio/summary, a scalar string, copied verbatim onto the node.
+    summary = "<p>Fediverse plumber.</p>"
+    actor = {**ACTOR, "summary": summary}
+    client = FakeActivityPubClient(actor=actor)
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
+
+    assert await graph.get_node_property(ACTOR_ID, "summary") == summary
+
+
+async def test_omitted_summary_stays_absent():
+    # No summary on the actor -> no property on the node.
+    client = FakeActivityPubClient(actor=ACTOR)  # ACTOR carries no summary
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
+
+    assert await graph.get_node_property(ACTOR_ID, "summary") is None
+
+
+# ---------------------------------------------------------------------------
+# icon — mainline only: an Image object carrying a `url`. That covers the bulk
+# of Fediverse implementations; every other shape (bare string, Link, list)
+# stores nothing for now. The long tail can be revisited later.
+# ---------------------------------------------------------------------------
+
+ICON_URL = "https://cosocial.ca/avatars/evan.png"
+
+
+async def test_stamps_icon_url_from_an_image_object():
+    # The common Mastodon shape: icon is an Image object carrying the url.
+    actor = {**ACTOR, "icon": {"type": "Image", "url": ICON_URL}}
+    client = FakeActivityPubClient(actor=actor)
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
+
+    assert await graph.get_node_property(ACTOR_ID, "icon") == ICON_URL
+
+
+@pytest.mark.parametrize(
+    "icon",
+    [
+        ICON_URL,  # bare URL string
+        {"type": "Link", "href": ICON_URL},  # Link object (url in href)
+        [{"type": "Image", "url": ICON_URL}],  # list of representations
+    ],
+    ids=["bare-string", "link-object", "list"],
+)
+async def test_non_mainline_icon_shapes_store_nothing(icon):
+    # Only the Image-with-url mainline is handled; other shapes are skipped.
+    actor = {**ACTOR, "icon": icon}
+    client = FakeActivityPubClient(actor=actor)
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
+
+    assert await graph.get_node_property(ACTOR_ID, "icon") is None
+
+
+async def test_omitted_icon_stays_absent():
+    # No icon on the actor -> no property on the node.
+    client = FakeActivityPubClient(actor=ACTOR)  # ACTOR carries no icon
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
+
+    assert await graph.get_node_property(ACTOR_ID, "icon") is None
+
+
 async def test_derives_hostname_from_the_actor_id():
     # Not carried on the actor doc — parsed out of the id URI's authority.
     client = FakeActivityPubClient()

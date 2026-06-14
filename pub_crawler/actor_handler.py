@@ -38,10 +38,12 @@ class ActorHandler(Handler):
         )
         await self._set_prop(actor_id, json, "preferredUsername")
         await self._set_prop(actor_id, json, "name")
+        await self._set_prop(actor_id, json, "summary")
         await self._set_prop(actor_id, json, "published")
         await self._set_prop(actor_id, json, "type")
         await self._set_prop(actor_id, json, "indexable")
         await self._set_prop(actor_id, json, "discoverable")
+        await self._set_icon(actor_id, json)
         await self._set_prop(actor_id, headers, "server")
         followers = json.get("followers", None)
         if followers:
@@ -74,3 +76,12 @@ class ActorHandler(Handler):
     async def _set_prop(self, actor_id, json, prop):
         if prop in json:
             await self.graph.set_node_property(actor_id, prop, json.get(prop))
+
+    async def _set_icon(self, actor_id, json):
+        icon = json.get("icon", None)
+        if icon and isinstance(icon, dict):
+            type = icon.get("type", None)
+            if type == "Image":
+                url = icon.get("url", None)
+                if url and isinstance(url, str):
+                    await self.graph.set_node_property(actor_id, "icon", url)
