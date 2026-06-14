@@ -2,6 +2,8 @@ from pub_crawler.handler import Handler
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 import httpx
+import json
+
 
 class ActorHandler(Handler):
 
@@ -20,15 +22,13 @@ class ActorHandler(Handler):
         if last_fetch_date:
             return
         try:
-            json, headers = await self.client.get_with_headers(actor_id)
+            doc, headers = await self.client.get_with_headers(actor_id)
         except httpx.HTTPStatusError as err:
             await self.graph.set_node_property(
                 actor_id, "http_status", err.response.status_code
             )
             return
-        await self.graph.set_node_property(
-            actor_id, "http_status", 200
-        )
+        await self.graph.set_node_property(actor_id, "http_status", 200)
         await self.graph.set_node_property(
             actor_id, "last_fetch_date", datetime.now(timezone.utc).isoformat()
         )
@@ -36,16 +36,19 @@ class ActorHandler(Handler):
         await self.graph.set_node_property(
             actor_id, "hostname", urlparse(actor_id).hostname
         )
-        await self._set_prop(actor_id, json, "preferredUsername")
-        await self._set_prop(actor_id, json, "name")
-        await self._set_prop(actor_id, json, "summary")
-        await self._set_prop(actor_id, json, "published")
-        await self._set_prop(actor_id, json, "type")
-        await self._set_prop(actor_id, json, "indexable")
-        await self._set_prop(actor_id, json, "discoverable")
-        await self._set_icon(actor_id, json)
+        await self._set_prop(actor_id, doc, "preferredUsername", "preferred_username")
+        await self._set_prop(actor_id, doc, "name")
+        await self._set_prop(actor_id, doc, "summary")
+        await self._set_prop(actor_id, doc, "published")
+        await self._set_prop(actor_id, doc, "type")
+        await self._set_prop(actor_id, doc, "indexable")
+        await self._set_prop(actor_id, doc, "discoverable")
+        await self._set_prop(actor_id, doc, "outbox")
+        await self._set_icon(actor_id, doc)
+        await self._set_also_known_as(actor_id, doc)
+        await self._set_other_props(actor_id, doc)
         await self._set_prop(actor_id, headers, "server")
-        followers = json.get("followers", None)
+        followers = doc.get("followers", None)
         if followers:
             await self.graph.set_node_property(actor_id, "followers", followers)
             await self.dispatcher.enqueue(
@@ -57,7 +60,7 @@ class ActorHandler(Handler):
                     "depth": depth,
                 }
             )
-        following = json.get("following", None)
+        following = doc.get("following", None)
         if following:
             await self.graph.set_node_property(actor_id, "following", following)
             await self.dispatcher.enqueue(
@@ -73,15 +76,59 @@ class ActorHandler(Handler):
     def next_available(self, job):
         return self.client.next_available(job["actor_id"])
 
-    async def _set_prop(self, actor_id, json, prop):
-        if prop in json:
-            await self.graph.set_node_property(actor_id, prop, json.get(prop))
+    async def _set_prop(self, actor_id, doc, as2Prop, gmlProp=None):
+        if gmlProp is None:
+            gmlProp = as2Prop
+        if as2Prop in doc:
+            await self.graph.set_node_property(actor_id, gmlProp, doc.get(as2Prop))
 
-    async def _set_icon(self, actor_id, json):
-        icon = json.get("icon", None)
+    async def _set_icon(self, actor_id, doc):
+        icon = doc.get("icon", None)
         if icon and isinstance(icon, dict):
-            type = icon.get("type", None)
-            if type == "Image":
+            icon_type = icon.get("type", None)
+            if icon_type == "Image":
                 url = icon.get("url", None)
                 if url and isinstance(url, str):
                     await self.graph.set_node_property(actor_id, "icon", url)
+
+    async def _set_other_props(self, actor_id, doc):
+        other_props = []
+        attachment = doc.get("attachment", None)
+        if isinstance(attachment, dict):
+            op = self._get_other_prop(attachment)
+            if op is not None:
+                other_props.append(op)
+        elif isinstance(attachment, list):
+            for att in attachment:
+                op = self._get_other_prop(att)
+                if op is not None:
+                    other_props.append(op)
+        if len(other_props) > 0:
+            await self.graph.set_node_property(
+                actor_id, "properties", json.dumps(other_props)
+            )
+
+    def _get_other_prop(self, obj):
+        if (
+            isinstance(obj, dict)
+            and obj.get("type") == "PropertyValue"
+            and "name" in obj
+            and "value" in obj
+        ):
+            return [obj.get("name"), obj.get("value")]
+        else:
+            return None
+
+    async def _set_also_known_as(self, actor_id, doc):
+        akas = []
+        aka = doc.get("alsoKnownAs", None)
+        if isinstance(aka, str):
+            akas = [aka]
+        elif isinstance(aka, list):
+            for uri in aka:
+                if isinstance(uri, str):
+                    akas.append(uri)
+        if len(akas) > 0:
+            await self.graph.set_node_property(
+                actor_id, "also_known_as", json.dumps(akas)
+            )

@@ -19,6 +19,8 @@ Assumed contract (flag if different):
        direction:'followers'|'following', depth:<actor's depth>}
 """
 
+import json
+
 import httpx
 import pytest
 
@@ -106,7 +108,7 @@ async def test_fetches_actor_and_stamps_node():
 
     assert client.calls == [ACTOR_ID]
     assert await graph.get_node_property(ACTOR_ID, "type") == "Person"
-    assert await graph.get_node_property(ACTOR_ID, "preferredUsername") == "evan"
+    assert await graph.get_node_property(ACTOR_ID, "preferred_username") == "evan"
     last_fetch_date = await graph.get_node_property(ACTOR_ID, "last_fetch_date")
     assert isinstance(last_fetch_date, str)
     assert last_fetch_date
@@ -230,6 +232,181 @@ async def test_omitted_icon_stays_absent():
     await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
 
     assert await graph.get_node_property(ACTOR_ID, "icon") is None
+
+
+# ---------------------------------------------------------------------------
+# properties — Mastodon's PropertyValue attachments (user "profile fields").
+# Packed into a single `properties` node property: a JSON-encoded list of
+# [name, value] pairs, in document order. Only type=="PropertyValue" entries
+# count; other attachment types (images, hashtags) are ignored. value HTML is
+# kept verbatim. No PropertyValue entries -> no property.
+# ---------------------------------------------------------------------------
+
+
+def property_value(name, value):
+    return {"type": "PropertyValue", "name": name, "value": value}
+
+
+async def test_packs_property_value_attachments_into_properties():
+    pub = "<a href=\"https://cosocial.ca/@evan\">cosocial.ca/@evan</a>"
+    work = "<a href=\"https://social.openearth.org/@evan\">social.openearth.org/@evan</a>"
+    actor = {
+        **ACTOR,
+        "attachment": [property_value("Public", pub), property_value("Work", work)],
+    }
+    client = FakeActivityPubClient(actor=actor)
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
+
+    stored = await graph.get_node_property(ACTOR_ID, "properties")
+    assert json.loads(stored) == [["Public", pub], ["Work", work]]
+
+
+async def test_properties_preserve_order_and_duplicate_names():
+    # Names can repeat and order is meaningful -> a list, not a dict.
+    actor = {
+        **ACTOR,
+        "attachment": [
+            property_value("Link", "one"),
+            property_value("Link", "two"),
+        ],
+    }
+    client = FakeActivityPubClient(actor=actor)
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
+
+    stored = await graph.get_node_property(ACTOR_ID, "properties")
+    assert json.loads(stored) == [["Link", "one"], ["Link", "two"]]
+
+
+async def test_non_property_value_attachments_are_excluded():
+    # attachment can carry other types (e.g. an image) -> only PropertyValue counts.
+    actor = {
+        **ACTOR,
+        "attachment": [
+            {"type": "Image", "url": "https://example.com/pic.png"},
+            property_value("Work", "here"),
+        ],
+    }
+    client = FakeActivityPubClient(actor=actor)
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
+
+    stored = await graph.get_node_property(ACTOR_ID, "properties")
+    assert json.loads(stored) == [["Work", "here"]]
+
+
+@pytest.mark.parametrize(
+    "incomplete",
+    [
+        {"type": "PropertyValue", "name": "Work"},  # missing value
+        {"type": "PropertyValue", "value": "here"},  # missing name
+    ],
+    ids=["missing-value", "missing-name"],
+)
+async def test_incomplete_property_values_are_dropped(incomplete):
+    # A PropertyValue lacking name or value is skipped, not stored with a null.
+    actor = {
+        **ACTOR,
+        "attachment": [incomplete, property_value("Public", "ok")],
+    }
+    client = FakeActivityPubClient(actor=actor)
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
+
+    stored = await graph.get_node_property(ACTOR_ID, "properties")
+    assert json.loads(stored) == [["Public", "ok"]]
+
+
+async def test_omitted_attachment_leaves_properties_absent():
+    client = FakeActivityPubClient(actor=ACTOR)  # ACTOR carries no attachment
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
+
+    assert await graph.get_node_property(ACTOR_ID, "properties") is None
+
+
+async def test_attachment_without_any_property_values_leaves_properties_absent():
+    # An attachment list with no PropertyValue entries -> no property at all.
+    actor = {**ACTOR, "attachment": [{"type": "Image", "url": "https://x/y.png"}]}
+    client = FakeActivityPubClient(actor=actor)
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
+
+    assert await graph.get_node_property(ACTOR_ID, "properties") is None
+
+
+# ---------------------------------------------------------------------------
+# outbox — the posts collection URL, stored verbatim. Not crawled here, but
+# captured so a later content-indexing pass doesn't need to re-fetch the actor.
+# ---------------------------------------------------------------------------
+
+OUTBOX_URL = "https://cosocial.ca/users/evan/outbox"
+
+
+async def test_stamps_outbox_url():
+    actor = {**ACTOR, "outbox": OUTBOX_URL}
+    client = FakeActivityPubClient(actor=actor)
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
+
+    assert await graph.get_node_property(ACTOR_ID, "outbox") == OUTBOX_URL
+
+
+async def test_omitted_outbox_stays_absent():
+    client = FakeActivityPubClient(actor=ACTOR)  # ACTOR carries no outbox
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
+
+    assert await graph.get_node_property(ACTOR_ID, "outbox") is None
+
+
+# ---------------------------------------------------------------------------
+# alsoKnownAs — account aliases (migration). Stored as a JSON-packed list of
+# strings. AS2 serializes a single value as a bare string -> normalized up to a
+# one-element list so the stored shape is always a list.
+# ---------------------------------------------------------------------------
+
+
+async def test_packs_also_known_as_list():
+    aka = ["https://old.example/users/evan", "https://other.example/@evan"]
+    actor = {**ACTOR, "alsoKnownAs": aka}
+    client = FakeActivityPubClient(actor=actor)
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
+
+    stored = await graph.get_node_property(ACTOR_ID, "also_known_as")
+    assert json.loads(stored) == aka
+
+
+async def test_single_also_known_as_string_normalized_to_a_list():
+    aka = "https://old.example/users/evan"
+    actor = {**ACTOR, "alsoKnownAs": aka}
+    client = FakeActivityPubClient(actor=actor)
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
+
+    stored = await graph.get_node_property(ACTOR_ID, "also_known_as")
+    assert json.loads(stored) == [aka]
+
+
+async def test_omitted_also_known_as_stays_absent():
+    client = FakeActivityPubClient(actor=ACTOR)  # ACTOR carries no alsoKnownAs
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
+
+    assert await graph.get_node_property(ACTOR_ID, "also_known_as") is None
 
 
 async def test_derives_hostname_from_the_actor_id():
