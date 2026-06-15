@@ -1,7 +1,7 @@
 import time
 import json
 import asyncio
-
+from datetime import datetime, timezone
 
 def _epoch_ms():
     return time.time() * 1000
@@ -10,6 +10,10 @@ def _epoch_ms():
 def _sleep_ms(ms):
     return asyncio.sleep(ms / 1000)
 
+def iso_utc(ms):
+    return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).isoformat(
+        timespec="microseconds"
+    ).replace("+00:00", "Z")
 
 QUEUE = "pub_crawler:queue"
 INFLIGHT = "pub_crawler:inflight"
@@ -23,7 +27,6 @@ class Dispatcher:
         self.now = now
         self.sleep = sleep
         self._handlers = dict()
-        self._count = -1
 
     def set_handler(self, job_type, handler):
         self._handlers[job_type] = handler
@@ -36,7 +39,8 @@ class Dispatcher:
         await self._remove_inflight(job)
         handler = self._get_handler(job)
         next_available = handler.next_available(job)
-        member = f"{self._counter():020d}:{self._job_to_str(job)}"
+        ts = iso_utc(self.now())
+        member = f"{ts}|{self._job_to_str(job)}"
         await self.redis.zadd(QUEUE, {member: next_available})
 
     async def get(self):
@@ -45,8 +49,7 @@ class Dispatcher:
             if not popped:
                 raise Exception("Empty queue")
             key, member, next_available = popped
-            counter_str, job_json = member.decode().split(":", 1)
-            counter = int(counter_str)
+            _, job_json = member.decode().split("|", 1)
             job = json.loads(job_json)
             if next_available > self.now():
                 await self._add_inflight(job)
@@ -90,10 +93,6 @@ class Dispatcher:
         if not handler:
             raise Exception(f"No handler for type {job['job_type']}")
         return handler
-
-    def _counter(self):
-        self._count += 1
-        return self._count
 
     async def _add_inflight(self, job):
         expected = self.now() + MAX_INFLIGHT

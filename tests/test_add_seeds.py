@@ -34,7 +34,7 @@ async def queued_jobs(r):
     members = await r.zrange(QUEUE, 0, -1)
     jobs = []
     for member in members:
-        _counter, job_json = member.decode().split(":", 1)
+        _ts, job_json = member.decode().split("|", 1)
         jobs.append(json.loads(job_json))
     return jobs
 
