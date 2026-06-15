@@ -47,7 +47,12 @@ class CollectionHandler(Handler):
                     if items:
                         props[f"{direction}_members_shared"] = True
                         await handle_items(
-                            self.graph, self.dispatcher, items, owner_id, direction, depth
+                            self.graph,
+                            self.dispatcher,
+                            items,
+                            owner_id,
+                            direction,
+                            depth,
                         )
                     else:
                         props[f"{direction}_members_shared"] = False
