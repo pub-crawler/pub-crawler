@@ -41,7 +41,7 @@ The crawler has three distinct steps for running. A composite script is provided
 
 ### add_seeds.py
 
-### crawler.py
+### crawl.py
 
 ### snapshot.py
 
