@@ -177,6 +177,40 @@ async def test_adds_a_follow_edge_per_member(direction, edge):
     assert await graph.get_node_properties(ITEM_A) == {}
 
 
+@pytest.mark.parametrize(
+    "direction, edge",
+    [
+        ("followers", (ITEM_A, OWNER_ID)),
+        ("following", (OWNER_ID, ITEM_A)),
+    ],
+)
+async def test_stamps_the_from_direction_flag_on_each_edge(direction, edge):
+    client = FakeActivityPubClient(doc=page_doc([ITEM_A]))
+    graph = FakeGraph()
+
+    await PageHandler(client, FakeDispatcher(), graph).handle(input_job(direction))
+
+    # The follow edge carries the from_{direction} flag.
+    assert await graph.get_edge_property(*edge, f"from_{direction}") is True
+
+
+async def test_skips_members_with_a_falsy_id():
+    # Empty/None ids are skipped; valid siblings are still wired up and enqueued.
+    client = FakeActivityPubClient(doc=page_doc(["", ITEM_A, None]))
+    dis = FakeDispatcher()
+    graph = FakeGraph()
+
+    await PageHandler(client, dis, graph).handle(input_job())
+
+    assert await graph.has_edge(ITEM_A, OWNER_ID)
+    assert [j for j in dis.enqueued if j["job_type"] == "actor"] == [
+        actor_job(ITEM_A, DEPTH + 1)
+    ]
+    # The falsy ids produced no node, edge, or actor job.
+    assert not await graph.has_node("")
+    assert not await graph.has_node(None)
+
+
 # ---------------------------------------------------------------------------
 # next -> page job
 # ---------------------------------------------------------------------------
@@ -201,6 +235,31 @@ async def test_no_next_means_no_page_job():
 
     page_jobs = [j for j in dis.enqueued if j["job_type"] == "page"]
     assert page_jobs == []
+
+
+async def test_filtered_page_with_next_but_no_items_still_pages_on():
+    # An AP server filtering its member list can return a page with `next` but no
+    # items. We still record the page and walk to `next`; there's just no member
+    # work to do.
+    client = FakeActivityPubClient(doc=page_doc([], next_id=NEXT_ID))
+    dis = FakeDispatcher()
+    graph = FakeGraph()
+    await graph.ensure_node(OWNER_ID)
+
+    await PageHandler(client, dis, graph).handle(input_job())
+
+    # Owner-side recorded and the next page enqueued...
+    assert await graph.get_node_property(OWNER_ID, f"{DIRECTION}_last_page") == PAGE_ID
+    assert (
+        await graph.get_node_property(OWNER_ID, f"{DIRECTION}_last_page_http_status")
+        == 200
+    )
+    assert [j for j in dis.enqueued if j["job_type"] == "page"] == [
+        next_page_job(NEXT_ID)
+    ]
+    # ...but no member work.
+    assert [j for j in dis.enqueued if j["job_type"] == "actor"] == []
+    assert [e async for e in graph.all_edges()] == []
 
 
 # ---------------------------------------------------------------------------
