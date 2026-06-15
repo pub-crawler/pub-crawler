@@ -36,7 +36,7 @@ class Dispatcher:
         await self._remove_inflight(job)
         handler = self._get_handler(job)
         next_available = handler.next_available(job)
-        member = f"{self._counter()}:{self._job_to_str(job)}"
+        member = f"{self._counter():020d}:{self._job_to_str(job)}"
         await self.redis.zadd(QUEUE, {member: next_available})
 
     async def get(self):

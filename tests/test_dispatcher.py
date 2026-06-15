@@ -147,6 +147,22 @@ async def test_get_breaks_next_available_ties_by_insertion_order():
     assert (await dis.get())["tag"] == "second"
 
 
+async def test_get_ties_stay_fifo_across_a_digit_width_boundary():
+    # The tiebreaker must order numerically, not lexicographically. Enqueue
+    # enough same-priority jobs that the insertion counter crosses a power-of-10
+    # boundary (0..10): lexicographically "10" < "2", so a string-compared
+    # tiebreaker would float the 11th job ahead of the 3rd. FIFO must hold.
+    h = FakeHandler(na=100)  # every job gets the same next_available
+    dis = Dispatcher(fake_redis())
+    dis.set_handler("actor", h)
+
+    for i in range(11):
+        await dis.enqueue({"job_type": "actor", "tag": i})
+
+    order = [(await dis.get())["tag"] for _ in range(11)]
+    assert order == list(range(11))
+
+
 # ---------------------------------------------------------------------------
 # join(): await until the queue is fully drained (termination)
 # ---------------------------------------------------------------------------
