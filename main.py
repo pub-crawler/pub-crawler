@@ -15,6 +15,7 @@ from crawl import (
 )
 from add_seeds import add_seeds
 from snapshot import snapshot
+import signal
 
 
 async def main(
@@ -35,6 +36,9 @@ async def main(
     async with pool.acquire() as conn:
         await database_setup(conn)
     G = DatabaseGraph(pool)
+    shutdown = asyncio.Event()
+
+    asyncio.get_running_loop().add_signal_handler(signal.SIGTERM, shutdown.set)
 
     try:
         await add_seeds(input_filename, r)
@@ -47,10 +51,28 @@ async def main(
         )
         crawler = Crawler(dispatcher, max_workers)
         await crawler.start()
-        await crawler.finish()
-        await snapshot(G, output_filename)
+        finish_task = asyncio.create_task(crawler.finish())
+        shutdown_task = asyncio.create_task(shutdown.wait())
+        done, pending = await asyncio.wait(
+            {finish_task, shutdown_task},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+
+        if shutdown_task in done:
+            await crawler.abort()
+
+        for other in pending:
+            other.cancel()
+            try:
+                await other
+            except asyncio.CancelledError:
+                pass
+
+        if finish_task in done:
+            await snapshot(G, output_filename)
     finally:
         await pool.close()
+        await r.aclose()
 
 
 if __name__ == "__main__":

@@ -13,6 +13,7 @@ from pub_crawler.crawler import Crawler
 import asyncio
 import redis.asyncio
 import asyncpg
+import signal
 
 DEFAULT_KEY_ID = "https://crawler.pub/actor#main-key"
 DEFAULT_PRIVATE_KEY_PEM_FILENAME = "private.pem"
@@ -62,6 +63,9 @@ async def main(
     async with pool.acquire() as conn:
         await database_setup(conn)
     G = DatabaseGraph(pool)
+    shutdown = asyncio.Event()
+
+    asyncio.get_running_loop().add_signal_handler(signal.SIGTERM, shutdown.set)
 
     try:
         dispatcher = make_dispatcher(
@@ -73,9 +77,26 @@ async def main(
         )
         crawler = Crawler(dispatcher, max_workers)
         await crawler.start()
-        await crawler.finish()
+        finish_task = asyncio.create_task(crawler.finish())
+        shutdown_task = asyncio.create_task(shutdown.wait())
+        done, pending = await asyncio.wait(
+            {finish_task, shutdown_task},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+
+        if shutdown_task in done:
+            await crawler.abort()
+
+        for other in pending:
+            other.cancel()
+            try:
+                await other
+            except asyncio.CancelledError:
+                pass
+
     finally:
         await pool.close()
+        await r.aclose()
 
 
 if __name__ == "__main__":
