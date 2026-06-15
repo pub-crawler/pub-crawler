@@ -681,6 +681,26 @@ async def test_omitted_moved_to_stays_absent():
     assert await graph.get_node_property(ACTOR_ID, "moved_to") is None
 
 
+async def test_stamps_published_from_the_actor_doc():
+    published = "2020-01-01T00:00:00Z"
+    actor = {**ACTOR, "published": published}
+    client = FakeActivityPubClient(actor=actor)
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
+
+    assert await graph.get_node_property(ACTOR_ID, "published") == published
+
+
+async def test_omitted_published_stays_absent():
+    client = FakeActivityPubClient(actor=ACTOR)  # ACTOR carries no published
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
+
+    assert await graph.get_node_property(ACTOR_ID, "published") is None
+
+
 async def test_derives_hostname_from_the_actor_id():
     # Not carried on the actor doc — parsed out of the id URI's authority.
     client = FakeActivityPubClient()
@@ -814,6 +834,34 @@ async def test_enqueues_both_collections_carrying_the_actor_depth(depth):
     # No depth gate here — collections go out at any depth, carrying the actor's.
     assert collection_job(FOLLOWERS_URL, "followers", depth) in jobs
     assert collection_job(FOLLOWING_URL, "following", depth) in jobs
+
+
+async def test_stamps_followers_and_following_urls_on_the_node():
+    # Besides enqueuing the collection jobs, the handler records each collection
+    # URL as a node property.
+    client = FakeActivityPubClient()
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
+
+    assert await graph.get_node_property(ACTOR_ID, "followers") == FOLLOWERS_URL
+    assert await graph.get_node_property(ACTOR_ID, "following") == FOLLOWING_URL
+
+
+async def test_actor_without_collections_enqueues_nothing_and_stamps_no_urls():
+    # An actor doc exposing neither followers nor following: the if-guards skip
+    # both the enqueue and the property write for each direction. (The actor is
+    # still fetched and otherwise stamped.)
+    actor = {k: v for k, v in ACTOR.items() if k not in ("followers", "following")}
+    client = FakeActivityPubClient(actor=actor)
+    graph = FakeGraph()
+    dis = FakeDispatcher()
+
+    await make_handler(client, graph, dis).handle(actor_job(ACTOR_ID, 0))
+
+    assert dis.enqueued == []
+    assert await graph.get_node_property(ACTOR_ID, "followers") is None
+    assert await graph.get_node_property(ACTOR_ID, "following") is None
 
 
 def test_next_available_delegates_to_the_client_for_the_actor_url():
