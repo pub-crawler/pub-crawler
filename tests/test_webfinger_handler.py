@@ -61,6 +61,21 @@ async def test_enqueues_the_actor_at_depth_zero():
     assert dis.enqueued == [ACTOR_JOB]
 
 
+async def test_enqueues_an_existing_but_unfetched_actor():
+    # The actor was already added as a bare node (e.g. discovered on some page)
+    # but never fetched, so it has no last_fetch_date. A seed webfinger resolving
+    # to it must STILL enqueue it — the enqueue is gated on last_fetch_date, not
+    # on whether this handler created the node.
+    client = FakeWebfingerClient()
+    dis = FakeDispatcher()
+    graph = FakeGraph()
+    await graph.ensure_node(ACTOR_ID)  # exists, but bare / unfetched
+
+    await WebfingerHandler(client, dis, graph).handle(WF_JOB)
+
+    assert dis.enqueued == [ACTOR_JOB]
+
+
 async def test_does_not_enqueue_an_already_crawled_actor():
     # The seed resolves to an actor that's already been fetched (e.g. a re-run).
     # Don't re-enqueue it — the handle-time skip would just drop it anyway.
