@@ -3,6 +3,7 @@ import json
 import asyncio
 from datetime import datetime, timezone
 
+
 def _epoch_ms():
     return time.time() * 1000
 
@@ -10,16 +11,23 @@ def _epoch_ms():
 def _sleep_ms(ms):
     return asyncio.sleep(ms / 1000)
 
+
 def iso_utc(ms):
-    return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).isoformat(
-        timespec="microseconds"
-    ).replace("+00:00", "Z")
+    return (
+        datetime.fromtimestamp(ms / 1000, tz=timezone.utc)
+        .isoformat(timespec="microseconds")
+        .replace("+00:00", "Z")
+    )
+
 
 QUEUE = "pub_crawler:queue"
 INFLIGHT = "pub_crawler:inflight"
+FAILED = "pub_crawler:failed"
+
 MAX_CLIENTS = 25
 TIME_PER_JOB = 100
 MAX_INFLIGHT = 15 * 60 * 1000
+
 
 class Dispatcher:
     def __init__(self, redis, now=_epoch_ms, sleep=_sleep_ms):
@@ -87,6 +95,14 @@ class Dispatcher:
             if expiry < now:
                 exp.append(self._str_to_job(jobstr))
         return exp
+
+    async def fail(self, job):
+        await self._remove_inflight(job)
+        await self.redis.sadd(FAILED, self._job_to_str(job))
+
+    async def failed(self):
+        async for member in self.redis.sscan_iter(FAILED):
+            yield self._str_to_job(member)
 
     def _get_handler(self, job):
         handler = self._handlers.get(job["job_type"], None)

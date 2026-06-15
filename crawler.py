@@ -51,8 +51,9 @@ async def worker(name, dispatcher):
             logging.debug(job)
             await dispatcher.dispatch(job)
         except Exception as e:
-            logging.warning(e)
-            pass
+            logging.warning(e, exc_info=True)
+            await dispatcher.fail(job)
+            continue
         await dispatcher.done(job)
 
 

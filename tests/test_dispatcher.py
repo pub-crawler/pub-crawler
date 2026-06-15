@@ -359,3 +359,93 @@ async def test_re_enqueuing_an_expired_job_recovers_it():
     assert await dis.expired() == []
     # ...and waiting on the queue again.
     assert await dis.get() == job
+
+
+# ---------------------------------------------------------------------------
+# fail()/failed(): record a job that could not be processed onto a simple list.
+#   fail(job) appends; failed() is an ASYNC ITERATOR over the recorded jobs.
+#   The store may be unordered (or ordered by insertion) — order isn't promised;
+#   membership + count are. Jobs round-trip back out as equal dicts.
+# ---------------------------------------------------------------------------
+
+
+async def collect_failed(dis):
+    return [job async for job in dis.failed()]
+
+
+async def test_failed_is_empty_before_anything_fails():
+    dis = Dispatcher(fake_redis())
+    dis.set_handler("actor", FakeHandler())
+
+    assert await collect_failed(dis) == []
+
+
+async def test_fail_records_the_job():
+    dis = Dispatcher(fake_redis())
+    dis.set_handler("actor", FakeHandler())
+    job = actor_job()
+
+    await dis.fail(job)
+
+    # The job round-trips back out of failed() as an equal dict.
+    assert await collect_failed(dis) == [job]
+
+
+async def test_failed_lists_every_failed_job():
+    dis = Dispatcher(fake_redis())
+    dis.set_handler("actor", FakeHandler())
+    a = {"job_type": "actor", "tag": "a"}
+    b = {"job_type": "actor", "tag": "b"}
+
+    await dis.fail(a)
+    await dis.fail(b)
+
+    failed = await collect_failed(dis)
+    assert len(failed) == 2
+    assert a in failed
+    assert b in failed
+
+
+async def test_failed_can_be_iterated_more_than_once():
+    # failed() is an inspection surface a reporter walks; reading it must not
+    # consume the record, so a second pass sees the same jobs.
+    dis = Dispatcher(fake_redis())
+    dis.set_handler("actor", FakeHandler())
+    await dis.fail(actor_job())
+
+    first = await collect_failed(dis)
+    second = await collect_failed(dis)
+
+    assert first == second
+    assert len(second) == 1
+
+
+async def test_failing_a_job_does_not_put_it_in_flight():
+    # Recording a failure is terminal bookkeeping: the job lands on the failed
+    # list, not in the in-flight set.
+    dis = Dispatcher(fake_redis())
+    dis.set_handler("actor", FakeHandler())
+
+    await dis.fail(actor_job())
+
+    assert await dis.inflight() == []
+    assert await collect_failed(dis) == [actor_job()]
+
+
+async def test_failing_an_in_flight_job_releases_its_lease():
+    # The real path: get() leases the job, then it fails. fail() is terminal, so
+    # like done() it takes the job OUT of flight -- otherwise the lease lingers,
+    # the job still counts toward join(), and once it expires the reaper would
+    # re-enqueue a job we've already recorded as failed.
+    dis = Dispatcher(fake_redis())
+    dis.set_handler("actor", FakeHandler())
+    await dis.enqueue(actor_job())
+    job = await dis.get()  # leased -> in flight
+    assert await dis.inflight() == [job]
+
+    await dis.fail(job)
+
+    # Released from flight (so a reaper won't resurrect it)...
+    assert await dis.inflight() == []
+    # ...and recorded on the failed list.
+    assert await collect_failed(dis) == [job]
