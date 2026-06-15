@@ -176,6 +176,36 @@ async def test_count_does_not_clobber_owner_metadata():
     assert await graph.get_node_property(OWNER_ID, "type") == "Person"
 
 
+async def test_records_a_zero_count():
+    # A genuinely empty collection (totalItems: 0) must still record the count —
+    # 0 is a real value, not "unknown". (Pins the fix for the truthy-drop bug.)
+    client = FakeActivityPubClient(doc=hidden_collection(FOLLOWERS_ID, total=0))
+    dis = FakeDispatcher()
+    graph = FakeGraph()
+    await graph.ensure_node(OWNER_ID)
+
+    await make_handler(client, dis, graph).handle(
+        collection_job(FOLLOWERS_ID, "followers", 0)
+    )
+
+    assert await graph.get_node_property(OWNER_ID, "followers_count") == 0
+
+
+async def test_omitted_total_items_leaves_count_absent():
+    # No totalItems advertised -> count stays unset (unknown, distinct from 0).
+    doc = {"id": FOLLOWERS_ID, "type": "OrderedCollection"}  # no totalItems
+    client = FakeActivityPubClient(doc=doc)
+    dis = FakeDispatcher()
+    graph = FakeGraph()
+    await graph.ensure_node(OWNER_ID)
+
+    await make_handler(client, dis, graph).handle(
+        collection_job(FOLLOWERS_ID, "followers", 0)
+    )
+
+    assert await graph.get_node_property(OWNER_ID, "followers_count") is None
+
+
 async def test_fetch_failure_propagates():
     client = FakeActivityPubClient(error=RuntimeError("boom"))
     dis = FakeDispatcher()
@@ -322,6 +352,55 @@ async def test_inline_member_dicts_use_their_id():
 
     assert await graph.has_edge(MEMBER_A, OWNER_ID)
     assert await graph.has_edge(MEMBER_B, OWNER_ID)
+
+
+async def test_inline_followers_stamps_the_from_followers_edge_flag():
+    client = FakeActivityPubClient(doc=inline_collection(FOLLOWERS_ID, [MEMBER_A]))
+    dis = FakeDispatcher()
+    graph = FakeGraph()
+    await graph.ensure_node(OWNER_ID)
+
+    await make_handler(client, dis, graph).handle(
+        collection_job(FOLLOWERS_ID, "followers", 0)
+    )
+
+    # The member -> owner edge carries the from_followers flag.
+    assert await graph.get_edge_property(MEMBER_A, OWNER_ID, "from_followers") is True
+
+
+async def test_inline_following_stamps_the_from_following_edge_flag():
+    client = FakeActivityPubClient(doc=inline_collection(FOLLOWING_ID, [MEMBER_A]))
+    dis = FakeDispatcher()
+    graph = FakeGraph()
+    await graph.ensure_node(OWNER_ID)
+
+    await make_handler(client, dis, graph).handle(
+        collection_job(FOLLOWING_ID, "following", 0)
+    )
+
+    # The owner -> member edge carries the from_following flag.
+    assert await graph.get_edge_property(OWNER_ID, MEMBER_A, "from_following") is True
+
+
+async def test_inline_skips_members_with_a_falsy_id():
+    # Empty/None ids are skipped; valid siblings are still wired up and enqueued.
+    members = ["", MEMBER_A, None]
+    client = FakeActivityPubClient(doc=inline_collection(FOLLOWERS_ID, members))
+    dis = FakeDispatcher()
+    graph = FakeGraph()
+    await graph.ensure_node(OWNER_ID)
+
+    await make_handler(client, dis, graph).handle(
+        collection_job(FOLLOWERS_ID, "followers", 0)
+    )
+
+    assert await graph.has_edge(MEMBER_A, OWNER_ID)
+    assert [j for j in dis.enqueued if j["job_type"] == "actor"] == [
+        actor_job(MEMBER_A, 1)
+    ]
+    # The falsy ids produced no node, edge, or actor job.
+    assert not await graph.has_node("")
+    assert not await graph.has_node(None)
 
 
 async def test_does_not_walk_inline_items_at_max_depth():

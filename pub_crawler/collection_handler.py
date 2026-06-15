@@ -85,6 +85,5 @@ class CollectionHandler(Handler):
         return self.client.next_available(job["collection_id"])
 
     async def _set_prop(self, owner_id, json, prop, prop2):
-        value = json.get(prop2, None)
-        if value:
-            await self.graph.set_node_property(owner_id, prop, value)
+        if prop2 in json:
+            await self.graph.set_node_property(owner_id, prop, json.get(prop2))
