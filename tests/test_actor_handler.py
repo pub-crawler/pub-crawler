@@ -39,6 +39,17 @@ ACTOR = {
     "following": FOLLOWING_URL,
 }
 
+# Personal fields (name/summary/properties/icon/image) are collected ONLY when
+# the actor is explicitly discoverable (consent-strict). Tests that exercise
+# those fields build on this discoverable base so they test their extraction
+# logic, not the gate; the gate itself is covered in its own section below.
+DISCOVERABLE_ACTOR = {**ACTOR, "discoverable": True}
+
+# The `outbox` URL is collected only when the actor is indexable (it exists for
+# a later content-indexing pass). Outbox tests build on this indexable base; the
+# gate itself is covered in the outbox section.
+INDEXABLE_ACTOR = {**ACTOR, "indexable": True}
+
 
 def actor_job(actor_id, depth):
     return {"job_type": "actor", "actor_id": actor_id, "depth": depth}
@@ -204,7 +215,7 @@ async def test_omitted_suspended_and_memorial_stay_absent(prop):
 async def test_stamps_summary_from_the_actor_doc():
     # The bio/summary, a scalar string, copied verbatim onto the node.
     summary = "<p>Fediverse plumber.</p>"
-    actor = {**ACTOR, "summary": summary}
+    actor = {**DISCOVERABLE_ACTOR, "summary": summary}
     client = FakeActivityPubClient(actor=actor)
     graph = FakeGraph()
 
@@ -215,7 +226,7 @@ async def test_stamps_summary_from_the_actor_doc():
 
 async def test_omitted_summary_stays_absent():
     # No summary on the actor -> no property on the node.
-    client = FakeActivityPubClient(actor=ACTOR)  # ACTOR carries no summary
+    client = FakeActivityPubClient(actor=DISCOVERABLE_ACTOR)  # no summary field
     graph = FakeGraph()
 
     await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
@@ -234,7 +245,7 @@ ICON_URL = "https://cosocial.ca/avatars/evan.png"
 
 async def test_stamps_icon_url_from_an_image_object():
     # The common Mastodon shape: icon is an Image object carrying the url.
-    actor = {**ACTOR, "icon": {"type": "Image", "url": ICON_URL}}
+    actor = {**DISCOVERABLE_ACTOR, "icon": {"type": "Image", "url": ICON_URL}}
     client = FakeActivityPubClient(actor=actor)
     graph = FakeGraph()
 
@@ -254,7 +265,7 @@ async def test_stamps_icon_url_from_an_image_object():
 )
 async def test_non_mainline_icon_shapes_store_nothing(icon):
     # Only the Image-with-url mainline is handled; other shapes are skipped.
-    actor = {**ACTOR, "icon": icon}
+    actor = {**DISCOVERABLE_ACTOR, "icon": icon}
     client = FakeActivityPubClient(actor=actor)
     graph = FakeGraph()
 
@@ -265,7 +276,7 @@ async def test_non_mainline_icon_shapes_store_nothing(icon):
 
 async def test_omitted_icon_stays_absent():
     # No icon on the actor -> no property on the node.
-    client = FakeActivityPubClient(actor=ACTOR)  # ACTOR carries no icon
+    client = FakeActivityPubClient(actor=DISCOVERABLE_ACTOR)  # no icon field
     graph = FakeGraph()
 
     await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
@@ -282,7 +293,7 @@ IMAGE_URL = "https://cosocial.ca/headers/evan.png"
 
 
 async def test_stamps_image_url_from_an_image_object():
-    actor = {**ACTOR, "image": {"type": "Image", "url": IMAGE_URL}}
+    actor = {**DISCOVERABLE_ACTOR, "image": {"type": "Image", "url": IMAGE_URL}}
     client = FakeActivityPubClient(actor=actor)
     graph = FakeGraph()
 
@@ -301,7 +312,7 @@ async def test_stamps_image_url_from_an_image_object():
     ids=["bare-string", "link-object", "list"],
 )
 async def test_non_mainline_image_shapes_store_nothing(image):
-    actor = {**ACTOR, "image": image}
+    actor = {**DISCOVERABLE_ACTOR, "image": image}
     client = FakeActivityPubClient(actor=actor)
     graph = FakeGraph()
 
@@ -311,7 +322,7 @@ async def test_non_mainline_image_shapes_store_nothing(image):
 
 
 async def test_omitted_image_stays_absent():
-    client = FakeActivityPubClient(actor=ACTOR)  # ACTOR carries no image
+    client = FakeActivityPubClient(actor=DISCOVERABLE_ACTOR)  # no image field
     graph = FakeGraph()
 
     await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
@@ -382,7 +393,7 @@ async def test_packs_property_value_attachments_into_properties():
     pub = "<a href=\"https://cosocial.ca/@evan\">cosocial.ca/@evan</a>"
     work = "<a href=\"https://social.openearth.org/@evan\">social.openearth.org/@evan</a>"
     actor = {
-        **ACTOR,
+        **DISCOVERABLE_ACTOR,
         "attachment": [property_value("Public", pub), property_value("Work", work)],
     }
     client = FakeActivityPubClient(actor=actor)
@@ -397,7 +408,7 @@ async def test_packs_property_value_attachments_into_properties():
 async def test_properties_preserve_order_and_duplicate_names():
     # Names can repeat and order is meaningful -> a list, not a dict.
     actor = {
-        **ACTOR,
+        **DISCOVERABLE_ACTOR,
         "attachment": [
             property_value("Link", "one"),
             property_value("Link", "two"),
@@ -415,7 +426,7 @@ async def test_properties_preserve_order_and_duplicate_names():
 async def test_non_property_value_attachments_are_excluded():
     # attachment can carry other types (e.g. an image) -> only PropertyValue counts.
     actor = {
-        **ACTOR,
+        **DISCOVERABLE_ACTOR,
         "attachment": [
             {"type": "Image", "url": "https://example.com/pic.png"},
             property_value("Work", "here"),
@@ -441,7 +452,7 @@ async def test_non_property_value_attachments_are_excluded():
 async def test_incomplete_property_values_are_dropped(incomplete):
     # A PropertyValue lacking name or value is skipped, not stored with a null.
     actor = {
-        **ACTOR,
+        **DISCOVERABLE_ACTOR,
         "attachment": [incomplete, property_value("Public", "ok")],
     }
     client = FakeActivityPubClient(actor=actor)
@@ -454,7 +465,7 @@ async def test_incomplete_property_values_are_dropped(incomplete):
 
 
 async def test_omitted_attachment_leaves_properties_absent():
-    client = FakeActivityPubClient(actor=ACTOR)  # ACTOR carries no attachment
+    client = FakeActivityPubClient(actor=DISCOVERABLE_ACTOR)  # no attachment field
     graph = FakeGraph()
 
     await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
@@ -464,7 +475,7 @@ async def test_omitted_attachment_leaves_properties_absent():
 
 async def test_attachment_without_any_property_values_leaves_properties_absent():
     # An attachment list with no PropertyValue entries -> no property at all.
-    actor = {**ACTOR, "attachment": [{"type": "Image", "url": "https://x/y.png"}]}
+    actor = {**DISCOVERABLE_ACTOR, "attachment": [{"type": "Image", "url": "https://x/y.png"}]}
     client = FakeActivityPubClient(actor=actor)
     graph = FakeGraph()
 
@@ -474,15 +485,97 @@ async def test_attachment_without_any_property_values_leaves_properties_absent()
 
 
 # ---------------------------------------------------------------------------
-# outbox — the posts collection URL, stored verbatim. Not crawled here, but
-# captured so a later content-indexing pass doesn't need to re-fetch the actor.
+# discoverable gate — consent-strict. The personal fields (name, summary,
+# properties, icon, image) are collected ONLY when the actor sets
+# discoverable=true. On an explicit `false` OR when the flag is absent, they
+# are suppressed — we don't circulate identifiable info without opt-in.
+# Structural fields are collected regardless.
+# ---------------------------------------------------------------------------
+
+PERSONAL_PROPS = ["name", "summary", "properties", "icon", "image"]
+
+
+def actor_with_all_personal_fields(**overrides):
+    # ACTOR already carries `name`; add the rest of the personal payload.
+    return {
+        **ACTOR,
+        "summary": "<p>bio</p>",
+        "icon": {"type": "Image", "url": ICON_URL},
+        "image": {"type": "Image", "url": IMAGE_URL},
+        "attachment": [property_value("Work", "here")],
+        **overrides,
+    }
+
+
+@pytest.mark.parametrize("prop", PERSONAL_PROPS)
+async def test_discoverable_actor_collects_personal_fields(prop):
+    actor = actor_with_all_personal_fields(discoverable=True)
+    client = FakeActivityPubClient(actor=actor)
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
+
+    assert await graph.get_node_property(ACTOR_ID, prop) is not None
+
+
+@pytest.mark.parametrize("prop", PERSONAL_PROPS)
+async def test_non_discoverable_actor_suppresses_personal_fields(prop):
+    # Explicit discoverable=false -> none of the personal fields are stored,
+    # even though every one of them is present on the doc.
+    actor = actor_with_all_personal_fields(discoverable=False)
+    client = FakeActivityPubClient(actor=actor)
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
+
+    assert await graph.get_node_property(ACTOR_ID, prop) is None
+
+
+@pytest.mark.parametrize("prop", PERSONAL_PROPS)
+async def test_actor_without_discoverable_suppresses_personal_fields(prop):
+    # discoverable is opt-in: absent is treated like false -> personal fields
+    # suppressed.
+    actor = actor_with_all_personal_fields()  # no discoverable flag
+    client = FakeActivityPubClient(actor=actor)
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
+
+    assert await graph.get_node_property(ACTOR_ID, prop) is None
+
+
+@pytest.mark.parametrize(
+    "prop, expected",
+    [
+        ("type", "Person"),
+        ("preferred_username", "evan"),
+        ("hostname", "cosocial.ca"),
+        ("discoverable", False),
+    ],
+)
+async def test_structural_fields_collected_even_when_not_discoverable(prop, expected):
+    # The non-personal data is still captured for a non-discoverable actor.
+    actor = actor_with_all_personal_fields(discoverable=False)
+    client = FakeActivityPubClient(actor=actor)
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
+
+    assert await graph.get_node_property(ACTOR_ID, prop) == expected
+
+
+# ---------------------------------------------------------------------------
+# outbox — the posts collection URL, stored verbatim. Captured so a later
+# content-indexing pass doesn't need to re-fetch the actor. Gated on the
+# indexable flag (consent-strict, same as the discoverable gate): collected
+# ONLY when indexable=true; suppressed on an explicit `false` OR when absent.
 # ---------------------------------------------------------------------------
 
 OUTBOX_URL = "https://cosocial.ca/users/evan/outbox"
 
 
-async def test_stamps_outbox_url():
-    actor = {**ACTOR, "outbox": OUTBOX_URL}
+async def test_stamps_outbox_url_for_an_indexable_actor():
+    actor = {**INDEXABLE_ACTOR, "outbox": OUTBOX_URL}
     client = FakeActivityPubClient(actor=actor)
     graph = FakeGraph()
 
@@ -492,7 +585,29 @@ async def test_stamps_outbox_url():
 
 
 async def test_omitted_outbox_stays_absent():
-    client = FakeActivityPubClient(actor=ACTOR)  # ACTOR carries no outbox
+    client = FakeActivityPubClient(actor=INDEXABLE_ACTOR)  # no outbox field
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
+
+    assert await graph.get_node_property(ACTOR_ID, "outbox") is None
+
+
+async def test_non_indexable_actor_suppresses_outbox():
+    # Explicit indexable=false -> outbox not stored, though it's on the doc.
+    actor = {**ACTOR, "indexable": False, "outbox": OUTBOX_URL}
+    client = FakeActivityPubClient(actor=actor)
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
+
+    assert await graph.get_node_property(ACTOR_ID, "outbox") is None
+
+
+async def test_actor_without_indexable_suppresses_outbox():
+    # indexable absent is treated like false -> outbox suppressed.
+    actor = {**ACTOR, "outbox": OUTBOX_URL}  # no indexable flag
+    client = FakeActivityPubClient(actor=actor)
     graph = FakeGraph()
 
     await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))

@@ -36,23 +36,25 @@ class ActorHandler(Handler):
         await self.graph.set_node_property(
             actor_id, "hostname", urlparse(actor_id).hostname
         )
+        await self._set_prop(actor_id, headers, "server")
         await self._set_prop(actor_id, doc, "preferredUsername", "preferred_username")
-        await self._set_prop(actor_id, doc, "name")
-        await self._set_prop(actor_id, doc, "summary")
         await self._set_prop(actor_id, doc, "published")
         await self._set_prop(actor_id, doc, "type")
         await self._set_prop(actor_id, doc, "indexable")
         await self._set_prop(actor_id, doc, "discoverable")
         await self._set_prop(actor_id, doc, "suspended")
         await self._set_prop(actor_id, doc, "memorial")
-        await self._set_prop(actor_id, doc, "outbox")
         await self._set_prop(actor_id, doc, "movedTo", "moved_to")
         await self._set_prop(actor_id, doc, "url")
-        await self._set_image_prop(actor_id, doc, "image")
-        await self._set_image_prop(actor_id, doc, "icon")
         await self._set_also_known_as(actor_id, doc)
-        await self._set_other_props(actor_id, doc)
-        await self._set_prop(actor_id, headers, "server")
+        if doc.get("discoverable") is True:
+            await self._set_prop(actor_id, doc, "name")
+            await self._set_prop(actor_id, doc, "summary")
+            await self._set_image_prop(actor_id, doc, "image")
+            await self._set_image_prop(actor_id, doc, "icon")
+            await self._set_other_props(actor_id, doc)
+        if doc.get("indexable") is True:
+            await self._set_prop(actor_id, doc, "outbox")
         followers = doc.get("followers", None)
         if followers:
             await self.graph.set_node_property(actor_id, "followers", followers)
