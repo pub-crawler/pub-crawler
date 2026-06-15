@@ -63,16 +63,18 @@ async def test_following_orients_edge_from_owner_with_flag():
     assert await graph.get_edge_property(OWNER, MEMBER_A, "from_following") is True
 
 
-async def test_enqueues_actor_jobs_at_depth_plus_one_in_order():
+async def test_enqueues_actor_jobs_at_depth_plus_one():
     graph = FakeGraph()
     dis = FakeDispatcher()
 
     await run(graph, dis, [MEMBER_A, MEMBER_B], depth=DEPTH)
 
-    assert actor_jobs(dis) == [
-        actor_job(MEMBER_A, DEPTH + 1),
-        actor_job(MEMBER_B, DEPTH + 1),
-    ]
+    # One actor job per member at depth+1. Enqueue order is NOT guaranteed
+    # (the unfetched set is unordered), so assert membership, not sequence.
+    jobs = actor_jobs(dis)
+    assert len(jobs) == 2
+    assert actor_job(MEMBER_A, DEPTH + 1) in jobs
+    assert actor_job(MEMBER_B, DEPTH + 1) in jobs
 
 
 async def test_already_fetched_member_is_edged_but_not_re_enqueued():

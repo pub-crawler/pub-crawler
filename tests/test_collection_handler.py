@@ -283,13 +283,14 @@ async def test_walks_inline_ordered_items_below_max_depth():
     for m in members:
         assert await graph.has_node(m)
         assert await graph.has_edge(m, OWNER_ID)
-    # And an actor job at depth+1 for each, in order — no page jobs.
+    # And an actor job at depth+1 for each — no page jobs. (Enqueue order isn't
+    # guaranteed, so assert membership, not sequence.)
     jobs = dis.enqueued
     assert [j for j in jobs if j["job_type"] == "page"] == []
-    assert [j for j in jobs if j["job_type"] == "actor"] == [
-        actor_job(MEMBER_A, 1),
-        actor_job(MEMBER_B, 1),
-    ]
+    actor_jobs = [j for j in jobs if j["job_type"] == "actor"]
+    assert len(actor_jobs) == 2
+    assert actor_job(MEMBER_A, 1) in actor_jobs
+    assert actor_job(MEMBER_B, 1) in actor_jobs
 
 
 async def test_walks_inline_items_key():
