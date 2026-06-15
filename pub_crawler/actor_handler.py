@@ -19,77 +19,82 @@ class ActorHandler(Handler):
         last_fetch_date = await self.graph.get_node_property(
             actor_id, "last_fetch_date"
         )
+        props = {}
+        headers = {}
+        doc = {}
         if last_fetch_date:
             return
         try:
             doc, headers = await self.client.get_with_headers(actor_id)
         except httpx.HTTPStatusError as err:
-            await self.graph.set_node_property(
-                actor_id, "http_status", err.response.status_code
-            )
-            return
-        await self.graph.set_node_property(actor_id, "http_status", 200)
-        await self.graph.set_node_property(
-            actor_id, "last_fetch_date", datetime.now(timezone.utc).isoformat()
-        )
-        await self.graph.set_node_property(actor_id, "depth", depth)
-        await self.graph.set_node_property(
-            actor_id, "hostname", urlparse(actor_id).hostname
-        )
-        await self._set_prop(actor_id, headers, "server")
-        await self._set_prop(actor_id, doc, "preferredUsername", "preferred_username")
-        await self._set_prop(actor_id, doc, "published")
-        await self._set_prop(actor_id, doc, "type")
-        await self._set_prop(actor_id, doc, "indexable")
-        await self._set_prop(actor_id, doc, "discoverable")
-        await self._set_prop(actor_id, doc, "suspended")
-        await self._set_prop(actor_id, doc, "memorial")
-        await self._set_prop(actor_id, doc, "movedTo", "moved_to")
-        await self._set_prop(actor_id, doc, "url")
-        await self._set_also_known_as(actor_id, doc)
-        if doc.get("discoverable") is True:
-            await self._set_prop(actor_id, doc, "name")
-            await self._set_prop(actor_id, doc, "summary")
-            await self._set_image_prop(actor_id, doc, "image")
-            await self._set_image_prop(actor_id, doc, "icon")
-            await self._set_other_props(actor_id, doc)
-        if doc.get("indexable") is True:
-            await self._set_prop(actor_id, doc, "outbox")
-        followers = doc.get("followers", None)
-        if followers:
-            await self.graph.set_node_property(actor_id, "followers", followers)
-            await self.dispatcher.enqueue(
-                {
-                    "job_type": "collection",
-                    "collection_id": followers,
-                    "owner_id": actor_id,
-                    "direction": "followers",
-                    "depth": depth,
-                }
-            )
-        following = doc.get("following", None)
-        if following:
-            await self.graph.set_node_property(actor_id, "following", following)
-            await self.dispatcher.enqueue(
-                {
-                    "job_type": "collection",
-                    "collection_id": following,
-                    "owner_id": actor_id,
-                    "direction": "following",
-                    "depth": depth,
-                }
-            )
+            props["http_status"] = err.response.status_code
+
+        if "http_status" not in props:
+            props["http_status"] = 200
+            props["last_fetch_date"] = datetime.now(timezone.utc).isoformat()
+            props["depth"] = depth
+            props["hostname"] = urlparse(actor_id).hostname
+            if "server" in headers:
+                props["server"] = headers["server"]
+            if "preferredUsername" in doc and isinstance(doc["preferredUsername"], str):
+                props["preferred_username"] = doc["preferredUsername"]
+            if "published" in doc and isinstance(doc["published"], str):
+                props["published"] = doc["published"]
+            if "type" in doc and isinstance(doc["type"], str):
+                props["type"] = doc["type"]
+            if "indexable" in doc and isinstance(doc["indexable"], bool):
+                props["indexable"] = doc["indexable"]
+            if "discoverable" in doc and isinstance(doc["discoverable"], bool):
+                props["discoverable"] = doc["discoverable"]
+            if "suspended" in doc and isinstance(doc["suspended"], bool):
+                props["suspended"] = doc["suspended"]
+            if "memorial" in doc and isinstance(doc["memorial"], bool):
+                props["memorial"] = doc["memorial"]
+            if "movedTo" in doc and isinstance(doc["movedTo"], str):
+                props["moved_to"] = doc["movedTo"]
+            if "url" in doc and isinstance(doc["url"], str):
+                props["url"] = doc["url"]
+            await self._set_also_known_as(props, doc)
+            if doc.get("discoverable") is True:
+                if "name" in doc and isinstance(doc["name"], str):
+                    props["name"] = doc["name"]
+                if "summary" in doc and isinstance(doc["summary"], str):
+                    props["summary"] = doc["summary"]
+                await self._set_image_prop(props, doc, "image")
+                await self._set_image_prop(props, doc, "icon")
+                await self._set_other_props(props, doc)
+            if doc.get("indexable") is True:
+                if "outbox" in doc and isinstance(doc["outbox"], str):
+                    props["outbox"] = doc["outbox"]
+            if "followers" in doc and isinstance(doc["followers"], str):
+                props["followers"] = doc["followers"]
+                await self.dispatcher.enqueue(
+                    {
+                        "job_type": "collection",
+                        "collection_id": doc["followers"],
+                        "owner_id": actor_id,
+                        "direction": "followers",
+                        "depth": depth,
+                    }
+                )
+            if "following" in doc and isinstance(doc["following"], str):
+                props["following"] = doc["following"]
+                await self.dispatcher.enqueue(
+                    {
+                        "job_type": "collection",
+                        "collection_id": doc["following"],
+                        "owner_id": actor_id,
+                        "direction": "following",
+                        "depth": depth,
+                    }
+                )
+
+        await self.graph.set_node_properties(actor_id, props)
 
     def next_available(self, job):
         return self.client.next_available(job["actor_id"])
 
-    async def _set_prop(self, actor_id, doc, as2_prop, gml_prop=None):
-        if gml_prop is None:
-            gml_prop = as2_prop
-        if as2_prop in doc and self._is_scalar(doc.get(as2_prop)):
-            await self.graph.set_node_property(actor_id, gml_prop, doc.get(as2_prop))
-
-    async def _set_image_prop(self, actor_id, doc, prop):
+    async def _set_image_prop(self, props, doc, prop):
         value = doc.get(prop)
         if (
             value
@@ -97,9 +102,9 @@ class ActorHandler(Handler):
             and value.get("type") == "Image"
             and isinstance(value.get("url"), str)
         ):
-            await self.graph.set_node_property(actor_id, prop, value.get("url"))
+            props[prop] = value.get("url")
 
-    async def _set_other_props(self, actor_id, doc):
+    async def _set_other_props(self, props, doc):
         other_props = []
         attachment = doc.get("attachment", None)
         if isinstance(attachment, dict):
@@ -112,9 +117,7 @@ class ActorHandler(Handler):
                 if op is not None:
                     other_props.append(op)
         if len(other_props) > 0:
-            await self.graph.set_node_property(
-                actor_id, "properties", json.dumps(other_props)
-            )
+            props["properties"] = json.dumps(other_props)
 
     def _get_other_prop(self, obj):
         if (
@@ -127,7 +130,7 @@ class ActorHandler(Handler):
         else:
             return None
 
-    async def _set_also_known_as(self, actor_id, doc):
+    async def _set_also_known_as(self, props, doc):
         akas = []
         aka = doc.get("alsoKnownAs", None)
         if isinstance(aka, str):
@@ -137,9 +140,4 @@ class ActorHandler(Handler):
                 if isinstance(uri, str):
                     akas.append(uri)
         if len(akas) > 0:
-            await self.graph.set_node_property(
-                actor_id, "also_known_as", json.dumps(akas)
-            )
-
-    def _is_scalar(self, value):
-        return value is not None and not isinstance(value, (dict, list))
+            props["also_known_as"] = json.dumps(akas)
