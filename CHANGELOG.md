@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-06-15
+
+### Fixed
+
+- Better handling for `next`/`first` page links that are
+  objects, not strings.
+- Better handling for HTTP responses that aren't JSON.
+
 ## [0.3.3] - 2026-06-15
 
 ### Fixed
