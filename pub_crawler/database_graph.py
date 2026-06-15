@@ -1,15 +1,22 @@
 import json
+from cachetools import LRUCache
+
+DEFAULT_MAX_CACHE_SIZE = 200_000
 
 
 class DatabaseGraph:
-    def __init__(self, pool):
+    def __init__(self, pool, *, max_cache_size=DEFAULT_MAX_CACHE_SIZE):
         self._pool = pool
+        self._cache = LRUCache(maxsize=max_cache_size)
 
     async def ensure_node(self, label):
+        if label in self._cache:
+            return
         async with self._pool.acquire() as conn:
             await conn.execute(
                 """
-                INSERT INTO node (label) VALUES ($1) ON CONFLICT (label) DO NOTHING
+                INSERT INTO node (label) VALUES ($1)
+                ON CONFLICT (label) DO NOTHING
                 """,
                 label,
             )
@@ -49,6 +56,8 @@ class DatabaseGraph:
                 """,
                 label,
             )
+            if label in self._cache:
+                del self._cache[label]
 
     async def delete_edge(self, from_label, to_label):
         async with self._pool.acquire() as conn:
@@ -196,4 +205,10 @@ class DatabaseGraph:
                     yield row["from_node"], row["to_node"], json.loads(row["props"])
 
     async def _node_id(self, conn, label):
-        return await conn.fetchval("SELECT id FROM node WHERE label=$1", label)
+        if label in self._cache:
+            return self._cache[label]
+        else:
+            id = await conn.fetchval("SELECT id FROM node WHERE label=$1", label)
+            if id is not None:
+                self._cache[label] = id
+            return id

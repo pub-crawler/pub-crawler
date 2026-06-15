@@ -105,6 +105,17 @@ async def test_delete_node(graph):
     assert not await graph.has_node(A)
 
 
+async def test_delete_node_after_its_id_was_looked_up(graph):
+    # Looking the node up first lets a backend that caches label->id populate that
+    # cache; delete_node must then invalidate it, or has_node would keep reporting
+    # a stale, deleted id as present. (FakeGraph has no such cache, so it passes
+    # trivially -- the point is to hold the caching DatabaseGraph to the contract.)
+    await graph.ensure_node(A)
+    assert await graph.has_node(A)      # seeds any label->id cache
+    await graph.delete_node(A)
+    assert not await graph.has_node(A)  # must not return a stale cached id
+
+
 # ---------------------------------------------------------------------------
 # edges: ensure / has / delete (directed)
 # ---------------------------------------------------------------------------
