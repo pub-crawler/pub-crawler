@@ -7,20 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.3.2]
+## [0.3.3] - 2026-06-15
+
+### Fixed
+
+- Correctly record when a collection has zero total items.
+
+### Changed
+
+- Added bulk update and query methods to DatabaseGraph and used them
+  to reduce the number of database calls in ActorHandler, CollectionHandler,
+  and PageHandler.
+- Added cache for node ids in DatabaseGraph, to reduce the number of
+  database calls even further.
+
+## [0.3.2] - 2026-06-15
 
 ### Fixed
 
 - fixup_queue.py uses a cursor to keep resource requirements low and
   avoid timeouts
 
-## [0.3.1]
+## [0.3.1] - 2026-06-15
 
 ### Fixed
 
 - fixup_queue.py was not in the Dockerfile
 
-## [0.3.0]
+## [0.3.0] - 2026-06-15
 
 ### Added
 
@@ -37,7 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Crawl script renamed to crawl.py
 
-## [0.2.0]
+## [0.2.0] - 2026-06-14
 
 ### Added
 
@@ -82,7 +96,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Crawler max depth defaults to 1.
 - `DatabaseGraph` no longer uses its own transaction.
 
-[Unreleased]: https://github.com/pub-crawler/pub-crawler/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/pub-crawler/pub-crawler/compare/v0.3.3...HEAD
+[0.3.3]: https://github.com/pub-crawler/pub-crawler/compare/v0.3.2...v0.3.3
+[0.3.2]: https://github.com/pub-crawler/pub-crawler/compare/v0.3.1...v0.3.2
+[0.3.1]: https://github.com/pub-crawler/pub-crawler/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/pub-crawler/pub-crawler/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/pub-crawler/pub-crawler/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/pub-crawler/pub-crawler/releases/tag/v0.1.0
