@@ -43,8 +43,13 @@ class ActorHandler(Handler):
         await self._set_prop(actor_id, doc, "type")
         await self._set_prop(actor_id, doc, "indexable")
         await self._set_prop(actor_id, doc, "discoverable")
+        await self._set_prop(actor_id, doc, "suspended")
+        await self._set_prop(actor_id, doc, "memorial")
         await self._set_prop(actor_id, doc, "outbox")
-        await self._set_icon(actor_id, doc)
+        await self._set_prop(actor_id, doc, "movedTo", "moved_to")
+        await self._set_prop(actor_id, doc, "url")
+        await self._set_image_prop(actor_id, doc, "image")
+        await self._set_image_prop(actor_id, doc, "icon")
         await self._set_also_known_as(actor_id, doc)
         await self._set_other_props(actor_id, doc)
         await self._set_prop(actor_id, headers, "server")
@@ -76,20 +81,21 @@ class ActorHandler(Handler):
     def next_available(self, job):
         return self.client.next_available(job["actor_id"])
 
-    async def _set_prop(self, actor_id, doc, as2Prop, gmlProp=None):
-        if gmlProp is None:
-            gmlProp = as2Prop
-        if as2Prop in doc:
-            await self.graph.set_node_property(actor_id, gmlProp, doc.get(as2Prop))
+    async def _set_prop(self, actor_id, doc, as2_prop, gml_prop=None):
+        if gml_prop is None:
+            gml_prop = as2_prop
+        if as2_prop in doc and self._is_scalar(doc.get(as2_prop)):
+            await self.graph.set_node_property(actor_id, gml_prop, doc.get(as2_prop))
 
-    async def _set_icon(self, actor_id, doc):
-        icon = doc.get("icon", None)
-        if icon and isinstance(icon, dict):
-            icon_type = icon.get("type", None)
-            if icon_type == "Image":
-                url = icon.get("url", None)
-                if url and isinstance(url, str):
-                    await self.graph.set_node_property(actor_id, "icon", url)
+    async def _set_image_prop(self, actor_id, doc, prop):
+        value = doc.get(prop)
+        if (
+            value
+            and isinstance(value, dict)
+            and value.get("type") == "Image"
+            and isinstance(value.get("url"), str)
+        ):
+            await self.graph.set_node_property(actor_id, prop, value.get("url"))
 
     async def _set_other_props(self, actor_id, doc):
         other_props = []
@@ -132,3 +138,6 @@ class ActorHandler(Handler):
             await self.graph.set_node_property(
                 actor_id, "also_known_as", json.dumps(akas)
             )
+
+    def _is_scalar(self, value):
+        return value is not None and not isinstance(value, (dict, list))

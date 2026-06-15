@@ -101,7 +101,7 @@ async def test_crawl_builds_the_graph_from_a_seed(keypair):
     # webfinger -> bare node; actor fetch -> stamped metadata; collections -> counts.
     assert await graph.has_node(ACTOR_ID)
     assert await graph.get_node_property(ACTOR_ID, "type") == "Person"
-    assert await graph.get_node_property(ACTOR_ID, "preferredUsername") == "evan"
+    assert await graph.get_node_property(ACTOR_ID, "preferred_username") == "evan"
     assert await graph.get_node_property(ACTOR_ID, "last_fetch_date") is not None
     assert await graph.get_node_property(ACTOR_ID, "followers_count") == FOLLOWERS_TOTAL
     assert await graph.get_node_property(ACTOR_ID, "following_count") == FOLLOWING_TOTAL

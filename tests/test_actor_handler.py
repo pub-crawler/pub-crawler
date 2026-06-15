@@ -162,6 +162,45 @@ async def test_omitted_indexable_and_discoverable_stay_absent(prop):
     assert await graph.get_node_property(ACTOR_ID, prop) is None
 
 
+# ---------------------------------------------------------------------------
+# suspended / memorial — toot: booleans, same false/absent discipline as the
+# indexable/discoverable flags. A search index wants to EXCLUDE these, so an
+# explicit `false` must stay distinct from an omitted field.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("prop", ["suspended", "memorial"])
+async def test_stamps_suspended_and_memorial_flags(prop):
+    actor = {**ACTOR, "suspended": True, "memorial": True}
+    client = FakeActivityPubClient(actor=actor)
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
+
+    assert await graph.get_node_property(ACTOR_ID, prop) is True
+
+
+@pytest.mark.parametrize("prop", ["suspended", "memorial"])
+async def test_stamps_suspended_and_memorial_when_false(prop):
+    actor = {**ACTOR, "suspended": False, "memorial": False}
+    client = FakeActivityPubClient(actor=actor)
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
+
+    assert await graph.get_node_property(ACTOR_ID, prop) is False
+
+
+@pytest.mark.parametrize("prop", ["suspended", "memorial"])
+async def test_omitted_suspended_and_memorial_stay_absent(prop):
+    client = FakeActivityPubClient(actor=ACTOR)  # ACTOR carries neither flag
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
+
+    assert await graph.get_node_property(ACTOR_ID, prop) is None
+
+
 async def test_stamps_summary_from_the_actor_doc():
     # The bio/summary, a scalar string, copied verbatim onto the node.
     summary = "<p>Fediverse plumber.</p>"
@@ -232,6 +271,98 @@ async def test_omitted_icon_stays_absent():
     await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
 
     assert await graph.get_node_property(ACTOR_ID, "icon") is None
+
+
+# ---------------------------------------------------------------------------
+# image — the header/banner. Same shape handling as icon: an Image object
+# carrying a `url`; every other shape stores nothing.
+# ---------------------------------------------------------------------------
+
+IMAGE_URL = "https://cosocial.ca/headers/evan.png"
+
+
+async def test_stamps_image_url_from_an_image_object():
+    actor = {**ACTOR, "image": {"type": "Image", "url": IMAGE_URL}}
+    client = FakeActivityPubClient(actor=actor)
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
+
+    assert await graph.get_node_property(ACTOR_ID, "image") == IMAGE_URL
+
+
+@pytest.mark.parametrize(
+    "image",
+    [
+        IMAGE_URL,  # bare URL string
+        {"type": "Link", "href": IMAGE_URL},  # Link object (url in href)
+        [{"type": "Image", "url": IMAGE_URL}],  # list of representations
+    ],
+    ids=["bare-string", "link-object", "list"],
+)
+async def test_non_mainline_image_shapes_store_nothing(image):
+    actor = {**ACTOR, "image": image}
+    client = FakeActivityPubClient(actor=actor)
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
+
+    assert await graph.get_node_property(ACTOR_ID, "image") is None
+
+
+async def test_omitted_image_stays_absent():
+    client = FakeActivityPubClient(actor=ACTOR)  # ACTOR carries no image
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
+
+    assert await graph.get_node_property(ACTOR_ID, "image") is None
+
+
+# ---------------------------------------------------------------------------
+# url — the human-facing profile link. Mainline string only: a bare URL is
+# stored; Link object / list shapes store nothing (revisit the long tail later).
+# ---------------------------------------------------------------------------
+
+PROFILE_URL = "https://cosocial.ca/@evan"
+
+
+async def test_stamps_url_from_a_bare_string():
+    actor = {**ACTOR, "url": PROFILE_URL}
+    client = FakeActivityPubClient(actor=actor)
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
+
+    assert await graph.get_node_property(ACTOR_ID, "url") == PROFILE_URL
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        {"type": "Link", "href": PROFILE_URL},  # Link object
+        [PROFILE_URL],  # list of strings
+        [{"type": "Link", "href": PROFILE_URL}],  # list of Links
+    ],
+    ids=["link-object", "list-of-strings", "list-of-links"],
+)
+async def test_non_string_url_shapes_store_nothing(url):
+    actor = {**ACTOR, "url": url}
+    client = FakeActivityPubClient(actor=actor)
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
+
+    assert await graph.get_node_property(ACTOR_ID, "url") is None
+
+
+async def test_omitted_url_stays_absent():
+    client = FakeActivityPubClient(actor=ACTOR)  # ACTOR carries no url
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
+
+    assert await graph.get_node_property(ACTOR_ID, "url") is None
 
 
 # ---------------------------------------------------------------------------
@@ -407,6 +538,32 @@ async def test_omitted_also_known_as_stays_absent():
     await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
 
     assert await graph.get_node_property(ACTOR_ID, "also_known_as") is None
+
+
+# ---------------------------------------------------------------------------
+# moved_to — AS2 `movedTo` (account migrated away). Single URI string, stored
+# verbatim under the snake_case key.
+# ---------------------------------------------------------------------------
+
+
+async def test_stamps_moved_to_url():
+    moved_to = "https://new.example/users/evan"
+    actor = {**ACTOR, "movedTo": moved_to}
+    client = FakeActivityPubClient(actor=actor)
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
+
+    assert await graph.get_node_property(ACTOR_ID, "moved_to") == moved_to
+
+
+async def test_omitted_moved_to_stays_absent():
+    client = FakeActivityPubClient(actor=ACTOR)  # ACTOR carries no movedTo
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
+
+    assert await graph.get_node_property(ACTOR_ID, "moved_to") is None
 
 
 async def test_derives_hostname_from_the_actor_id():
