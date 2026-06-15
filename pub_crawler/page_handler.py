@@ -17,47 +17,42 @@ class PageHandler(Handler):
         direction = job["direction"]
         depth = job["depth"]
         await self.graph.ensure_node(owner_id)
-        await self.graph.set_node_property(owner_id, f"{direction}_last_page", page_id)
-        await self.graph.set_node_property(
-            owner_id, f"{direction}_pages_complete", False
-        )
+        props = {}
+        props[f"{direction}_last_page"] = page_id
+        props[f"{direction}_pages_complete"] = False
+        await self.graph.set_node_properties(owner_id, props)
+        json = {}
         try:
             json = await self.client.get(page_id)
         except httpx.HTTPStatusError as err:
-            await self.graph.set_node_property(
-                owner_id, f"{direction}_last_page_http_status", err.response.status_code
-            )
-            return
-        await self.graph.set_node_property(
-            owner_id, f"{direction}_last_page_http_status", 200
-        )
+            props[f"{direction}_last_page_http_status"] = err.response.status_code
 
-        next = json.get("next", None)
+        if f"{direction}_last_page_http_status" not in props:
+            props[f"{direction}_last_page_http_status"] = 200
 
-        if next:
-            await self.dispatcher.enqueue(
-                {
-                    "job_type": "page",
-                    "page_id": next,
-                    "direction": direction,
-                    "owner_id": owner_id,
-                    "depth": depth,
-                }
-            )
-        else:
-            await self.graph.set_node_property(
-                owner_id, f"{direction}_pages_complete", True
-            )
+            next = json.get("next", None)
 
-        items = json.get("items", None)
-        if not items:
-            items = json.get("orderedItems", None)
-        if not items:
-            # log this
-            return
-        await handle_items(
-            self.graph, self.dispatcher, items, owner_id, direction, depth
-        )
+            if next:
+                await self.dispatcher.enqueue(
+                    {
+                        "job_type": "page",
+                        "page_id": next,
+                        "direction": direction,
+                        "owner_id": owner_id,
+                        "depth": depth,
+                    }
+                )
+            else:
+                props[f"{direction}_pages_complete"] = True
+
+            items = json.get("items", json.get("orderedItems", None))
+
+            if items:
+                await handle_items(
+                    self.graph, self.dispatcher, items, owner_id, direction, depth
+                )
+
+        await self.graph.set_node_properties(owner_id, props)
 
     def next_available(self, job):
         return self.client.next_available(job["page_id"])

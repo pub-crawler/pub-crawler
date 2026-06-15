@@ -326,6 +326,30 @@ async def test_records_status_and_marks_incomplete_on_a_page_error(status):
     assert dis.enqueued == []
 
 
+async def test_non_http_failure_propagates_but_records_the_attempt():
+    # A non-HTTPStatusError (timeout, connection reset, ...) is NOT caught, so it
+    # propagates. But the page is marked before the fetch, so the attempt is still
+    # recorded: last_page set, pages_complete left False (never reached the end).
+    client = FakeActivityPubClient(error=RuntimeError("boom"))
+    dis = FakeDispatcher()
+    graph = FakeGraph()
+    await graph.ensure_node(OWNER_ID)
+
+    with pytest.raises(RuntimeError):
+        await PageHandler(client, dis, graph).handle(input_job())
+
+    assert await graph.get_node_property(OWNER_ID, f"{DIRECTION}_last_page") == PAGE_ID
+    assert (
+        await graph.get_node_property(OWNER_ID, f"{DIRECTION}_pages_complete") is False
+    )
+    # No status recorded (no response), and nothing enqueued.
+    assert (
+        await graph.get_node_property(OWNER_ID, f"{DIRECTION}_last_page_http_status")
+        is None
+    )
+    assert dis.enqueued == []
+
+
 def test_next_available_delegates_to_the_client_for_the_page_url():
     client = FakeActivityPubClient()
     handler = PageHandler(client, FakeDispatcher(), FakeGraph())
