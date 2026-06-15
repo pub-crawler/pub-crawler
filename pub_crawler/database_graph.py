@@ -1,15 +1,21 @@
 import json
+from collections.abc import AsyncIterator
+from typing import Any
+
+import asyncpg
 from cachetools import LRUCache
 
 DEFAULT_MAX_CACHE_SIZE = 200_000
 
 
 class DatabaseGraph:
-    def __init__(self, pool, *, max_cache_size=DEFAULT_MAX_CACHE_SIZE):
+    def __init__(
+        self, pool: asyncpg.Pool, *, max_cache_size: int = DEFAULT_MAX_CACHE_SIZE
+    ) -> None:
         self._pool = pool
         self._cache = LRUCache(maxsize=max_cache_size)
 
-    async def ensure_node(self, label):
+    async def ensure_node(self, label: str) -> None:
         if label in self._cache:
             return
         async with self._pool.acquire() as conn:
@@ -21,7 +27,7 @@ class DatabaseGraph:
                 label,
             )
 
-    async def ensure_edge(self, from_label, to_label):
+    async def ensure_edge(self, from_label: str, to_label: str) -> None:
         async with self._pool.acquire() as conn:
             from_node = await self._node_id(conn, from_label)
             to_node = await self._node_id(conn, to_label)
@@ -33,11 +39,11 @@ class DatabaseGraph:
                 to_node,
             )
 
-    async def has_node(self, label):
+    async def has_node(self, label: str) -> bool:
         async with self._pool.acquire() as conn:
             return await self._node_id(conn, label) is not None
 
-    async def has_edge(self, from_label, to_label):
+    async def has_edge(self, from_label: str, to_label: str) -> bool:
         async with self._pool.acquire() as conn:
             from_node = await self._node_id(conn, from_label)
             to_node = await self._node_id(conn, to_label)
@@ -48,7 +54,7 @@ class DatabaseGraph:
             )
             return ts is not None
 
-    async def delete_node(self, label):
+    async def delete_node(self, label: str) -> None:
         async with self._pool.acquire() as conn:
             await conn.execute(
                 """
@@ -59,7 +65,7 @@ class DatabaseGraph:
             if label in self._cache:
                 del self._cache[label]
 
-    async def delete_edge(self, from_label, to_label):
+    async def delete_edge(self, from_label: str, to_label: str) -> None:
         async with self._pool.acquire() as conn:
             from_node = await self._node_id(conn, from_label)
             to_node = await self._node_id(conn, to_label)
@@ -69,7 +75,7 @@ class DatabaseGraph:
                 to_node,
             )
 
-    async def set_node_property(self, label, name, value):
+    async def set_node_property(self, label: str, name: str, value: Any) -> None:
         async with self._pool.acquire() as conn:
             id = await self._node_id(conn, label)
             await conn.execute(
@@ -85,7 +91,9 @@ class DatabaseGraph:
                 json.dumps(value),
             )
 
-    async def set_edge_property(self, from_label, to_label, name, value):
+    async def set_edge_property(
+        self, from_label: str, to_label: str, name: str, value: Any
+    ) -> None:
         async with self._pool.acquire() as conn:
             from_node = await self._node_id(conn, from_label)
             to_node = await self._node_id(conn, to_label)
@@ -103,7 +111,7 @@ class DatabaseGraph:
                 json.dumps(value),
             )
 
-    async def get_node_property(self, label, name):
+    async def get_node_property(self, label: str, name: str) -> Any:
         async with self._pool.acquire() as conn:
             id = await self._node_id(conn, label)
             value = await conn.fetchval(
@@ -118,7 +126,7 @@ class DatabaseGraph:
             else:
                 return json.loads(value)
 
-    async def get_edge_property(self, from_label, to_label, name):
+    async def get_edge_property(self, from_label: str, to_label: str, name: str) -> Any:
         async with self._pool.acquire() as conn:
             from_node = await self._node_id(conn, from_label)
             to_node = await self._node_id(conn, to_label)
@@ -138,7 +146,7 @@ class DatabaseGraph:
             else:
                 return json.loads(value)
 
-    async def get_node_properties(self, label):
+    async def get_node_properties(self, label: str) -> dict[str, Any]:
         async with self._pool.acquire() as conn:
             id = await self._node_id(conn, label)
             rows = await conn.fetch(
@@ -153,7 +161,7 @@ class DatabaseGraph:
                 props[row["name"]] = json.loads(row["value"])
             return props
 
-    async def get_edge_properties(self, from_label, to_label):
+    async def get_edge_properties(self, from_label: str, to_label: str) -> dict[str, Any]:
         async with self._pool.acquire() as conn:
             from_node = await self._node_id(conn, from_label)
             to_node = await self._node_id(conn, to_label)
@@ -171,7 +179,7 @@ class DatabaseGraph:
                 props[row["name"]] = json.loads(row["value"])
             return props
 
-    async def all_nodes(self):
+    async def all_nodes(self) -> AsyncIterator[tuple[int, str, dict[str, Any]]]:
         async with self._pool.acquire() as conn:
             async with conn.transaction():
                 sql = """
@@ -187,7 +195,7 @@ class DatabaseGraph:
                 async for row in conn.cursor(sql):
                     yield row["id"], row["label"], json.loads(row["props"])
 
-    async def all_edges(self):
+    async def all_edges(self) -> AsyncIterator[tuple[int, int, dict[str, Any]]]:
         async with self._pool.acquire() as conn:
             async with conn.transaction():
                 sql = """
@@ -204,7 +212,7 @@ class DatabaseGraph:
                 async for row in conn.cursor(sql):
                     yield row["from_node"], row["to_node"], json.loads(row["props"])
 
-    async def _node_id(self, conn, label):
+    async def _node_id(self, conn, label: str) -> int | None:
         if label in self._cache:
             return self._cache[label]
         else:
