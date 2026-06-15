@@ -5,7 +5,7 @@ from pub_crawler.database_graph import DatabaseGraph
 import logging
 import redis.asyncio
 import asyncpg
-from crawler import (
+from crawl import (
     make_dispatcher,
     crawl_graph,
     DEFAULT_KEY_ID,

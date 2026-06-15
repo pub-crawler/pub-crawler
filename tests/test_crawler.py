@@ -19,7 +19,7 @@ Assumed contract (flag if different):
 import httpx
 from fakeredis import FakeAsyncRedis, FakeServer
 
-from crawler import crawl_graph, make_dispatcher
+from crawl import crawl_graph, make_dispatcher
 from support import FakeGraph
 
 ACCT = "evan@cosocial.ca"

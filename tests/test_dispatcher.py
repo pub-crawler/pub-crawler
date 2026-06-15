@@ -449,3 +449,78 @@ async def test_failing_an_in_flight_job_releases_its_lease():
     assert await dis.inflight() == []
     # ...and recorded on the failed list.
     assert await collect_failed(dis) == [job]
+
+
+# ---------------------------------------------------------------------------
+# stop(): the circuit breaker. stop() sets a flag checked at the TOP of get();
+# a stopped dispatcher hands out no more work -- get() returns None instead, and
+# WITHOUT popping anything (queued jobs stay put for the next run). The breaker
+# gates handing work OUT only: enqueue() still works (e.g. re-enqueuing in-flight
+# jobs during shutdown). No reset -- build a fresh dispatcher to resume.
+#
+# Assumed shape (flag if it differs): stop() is SYNCHRONOUS -- it just sets a
+# flag, so it is called without await. Every get() here is wrapped in wait_for
+# so a breaker that blocks (e.g. checked after the pop instead of before) fails
+# the test instead of hanging it.
+# ---------------------------------------------------------------------------
+
+
+async def test_get_returns_none_when_stopped():
+    dis = Dispatcher(fake_redis())
+    dis.set_handler("actor", FakeHandler())
+    await dis.enqueue(actor_job())
+
+    dis.stop()
+
+    assert await asyncio.wait_for(dis.get(), timeout=1.0) is None
+
+
+async def test_get_returns_none_when_stopped_even_on_an_empty_queue():
+    # The flag is checked BEFORE the blocking pop, so a stopped dispatcher with
+    # an empty queue returns None at once rather than blocking in bzpopmin.
+    dis = Dispatcher(fake_redis())
+    dis.set_handler("actor", FakeHandler())
+
+    dis.stop()
+
+    assert await asyncio.wait_for(dis.get(), timeout=1.0) is None
+
+
+async def test_stop_leaves_queued_jobs_in_place():
+    # stop() refuses to hand the job out; it must not pop it. A fresh, un-stopped
+    # dispatcher on the same Redis still finds it waiting.
+    r = fake_redis()
+    stopped = Dispatcher(r)
+    stopped.set_handler("actor", FakeHandler())
+    await stopped.enqueue(actor_job())
+    stopped.stop()
+    assert await asyncio.wait_for(stopped.get(), timeout=1.0) is None
+
+    fresh = Dispatcher(r)
+    fresh.set_handler("actor", FakeHandler())
+    assert await asyncio.wait_for(fresh.get(), timeout=1.0) == actor_job()
+
+
+async def test_enqueue_still_works_after_stop():
+    # The breaker gates get() only -- enqueue onto a stopped dispatcher succeeds.
+    r = fake_redis()
+    dis = Dispatcher(r)
+    dis.set_handler("actor", FakeHandler())
+
+    dis.stop()
+    await dis.enqueue(actor_job())
+
+    fresh = Dispatcher(r)
+    fresh.set_handler("actor", FakeHandler())
+    assert await asyncio.wait_for(fresh.get(), timeout=1.0) == actor_job()
+
+
+async def test_stop_is_idempotent():
+    dis = Dispatcher(fake_redis())
+    dis.set_handler("actor", FakeHandler())
+    await dis.enqueue(actor_job())
+
+    dis.stop()
+    dis.stop()
+
+    assert await asyncio.wait_for(dis.get(), timeout=1.0) is None

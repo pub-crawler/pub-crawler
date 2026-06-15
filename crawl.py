@@ -9,7 +9,7 @@ from pub_crawler.fixed_window_counter import FixedWindowCounter
 from pub_crawler.dispatcher import Dispatcher
 from pub_crawler.database import database_setup
 from pub_crawler.database_graph import DatabaseGraph
-import logging
+from pub_crawler.crawler import Crawler
 import asyncio
 import redis.asyncio
 import asyncpg
@@ -44,31 +44,12 @@ def make_dispatcher(
     return dispatcher
 
 
-async def worker(name, dispatcher):
-    while True:
-        job = await dispatcher.get()
-        try:
-            logging.debug(job)
-            await dispatcher.dispatch(job)
-        except Exception as e:
-            logging.warning(e, exc_info=True)
-            await dispatcher.fail(job)
-            continue
-        await dispatcher.done(job)
-
-
 async def crawl_graph(dispatcher, *, max_workers=DEFAULT_MAX_WORKERS):
 
-    workers = []
-    for i in range(max_workers):
-        workers.append(asyncio.create_task(worker(f"wfw-{i}", dispatcher)))
+    crawler = Crawler(dispatcher, max_workers)
 
-    await dispatcher.join()
-
-    for w in workers:
-        w.cancel()
-
-    await asyncio.gather(*workers, return_exceptions=True)
+    await crawler.start()
+    await crawler.finish()
 
 
 async def main(
@@ -107,6 +88,13 @@ if __name__ == "__main__":
     import os
     import sys
     import argparse
+    import logging
+
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    )
+    logging.getLogger("httpcore").setLevel(logging.INFO)
 
     parser = argparse.ArgumentParser(
         description="Crawl the Fediverse follower/following graph."

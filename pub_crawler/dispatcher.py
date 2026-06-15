@@ -35,6 +35,7 @@ class Dispatcher:
         self.now = now
         self.sleep = sleep
         self._handlers = dict()
+        self._stopped = False
 
     def set_handler(self, job_type, handler):
         self._handlers[job_type] = handler
@@ -52,7 +53,7 @@ class Dispatcher:
         await self.redis.zadd(QUEUE, {member: next_available})
 
     async def get(self):
-        while True:
+        while not self._stopped:
             popped = await self.redis.bzpopmin(QUEUE)
             if not popped:
                 raise Exception("Empty queue")
@@ -69,6 +70,7 @@ class Dispatcher:
                 return job
             else:
                 await self.redis.zadd(QUEUE, {member: next_available})
+        return None
 
     async def done(self, job):
         await self._remove_inflight(job)
@@ -103,6 +105,9 @@ class Dispatcher:
     async def failed(self):
         async for member in self.redis.sscan_iter(FAILED):
             yield self._str_to_job(member)
+
+    def stop(self):
+        self._stopped = True
 
     def _get_handler(self, job):
         handler = self._handlers.get(job["job_type"], None)

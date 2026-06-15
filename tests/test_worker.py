@@ -12,9 +12,11 @@ raises StopWorker from get() (which is outside the try, so it breaks the loop)
 to end the test deterministically.
 """
 
+import asyncio
+
 import pytest
 
-from crawler import worker
+from pub_crawler.crawler import worker
 
 
 class StopWorker(Exception):
@@ -83,3 +85,41 @@ async def test_worker_keeps_draining_after_a_failure():
     assert dis.dispatched == [job("bad"), job("good")]
     assert dis.failed_jobs == [job("bad")]
     assert dis.done_jobs == [job("good")]
+
+
+class NoneAfterJobs:
+    """get() hands out the scripted jobs, then returns None forever -- the stop
+    sentinel a stopped dispatcher yields."""
+
+    def __init__(self, jobs=()):
+        self._jobs = list(jobs)
+        self.dispatched = []
+        self.done_jobs = []
+        self.failed_jobs = []
+
+    async def get(self):
+        return self._jobs.pop(0) if self._jobs else None
+
+    async def dispatch(self, job):
+        self.dispatched.append(job)
+
+    async def done(self, job):
+        self.done_jobs.append(job)
+
+    async def fail(self, job):
+        self.failed_jobs.append(job)
+
+
+async def test_worker_exits_when_get_returns_none():
+    # None from get() is the stop sentinel: the worker drains real jobs, then
+    # returns the moment get() yields None -- it must NOT dispatch the sentinel.
+    # (A worker that ignored None would loop on it forever; wait_for turns that
+    # hang into a failure.)
+    dis = NoneAfterJobs([job("a"), job("b")])
+
+    await asyncio.wait_for(worker("w-0", dis), timeout=1.0)
+
+    assert dis.dispatched == [job("a"), job("b")]
+    assert dis.done_jobs == [job("a"), job("b")]
+    assert dis.failed_jobs == []
+    assert None not in dis.dispatched
