@@ -30,18 +30,22 @@ class PageHandler(Handler):
         if f"{direction}_last_page_http_status" not in props:
             props[f"{direction}_last_page_http_status"] = 200
 
-            next = json.get("next", None)
-
-            if next:
-                await self.dispatcher.enqueue(
-                    {
-                        "job_type": "page",
-                        "page_id": next,
-                        "direction": direction,
-                        "owner_id": owner_id,
-                        "depth": depth,
-                    }
-                )
+            if "next" in json:
+                next_id = None
+                if isinstance(json.get("next"), dict) and isinstance(json["next"].get("id"), str):
+                    next_id = json["next"].get("id")
+                elif isinstance(json.get("next"), str) and json["next"]:
+                    next_id = json["next"]
+                if next_id:
+                    await self.dispatcher.enqueue(
+                        {
+                            "job_type": "page",
+                            "page_id": next_id,
+                            "direction": direction,
+                            "owner_id": owner_id,
+                            "depth": depth,
+                        }
+                    )
             else:
                 props[f"{direction}_pages_complete"] = True
 

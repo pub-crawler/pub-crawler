@@ -449,6 +449,40 @@ async def test_prefers_pagination_when_both_first_and_inline_present():
     assert not await graph.has_edge(MEMBER_A, OWNER_ID)
 
 
+async def test_enqueues_a_page_job_for_an_embedded_first_page_object():
+    # AP allows `first` to be an embedded OrderedCollectionPage object, not just a
+    # URL. We don't walk it inline — we enqueue a page job for its id (PageHandler
+    # fetches it). Crucially: page_id is the id string, never the dict.
+    first_url = f"{FOLLOWERS_ID}?page=1"
+    doc = {
+        "id": FOLLOWERS_ID,
+        "type": "OrderedCollection",
+        "totalItems": 2,
+        "first": {
+            "type": "OrderedCollectionPage",
+            "id": first_url,
+            "orderedItems": [MEMBER_A, MEMBER_B],
+        },
+    }
+    client = FakeActivityPubClient(doc=doc)
+    dis = FakeDispatcher()
+    graph = FakeGraph()
+    await graph.ensure_node(OWNER_ID)
+
+    await make_handler(client, dis, graph).handle(
+        collection_job(FOLLOWERS_ID, "followers", 0)
+    )
+
+    assert await graph.get_node_property(OWNER_ID, "followers_count") == 2
+    assert await graph.get_node_property(OWNER_ID, "followers_members_shared") is True
+    # A page job for the embedded page's id — not an inline walk.
+    assert [j for j in dis.enqueued if j["job_type"] == "page"] == [
+        page_job(first_url, "followers", 0)
+    ]
+    assert [j for j in dis.enqueued if j["job_type"] == "actor"] == []
+    assert not await graph.has_edge(MEMBER_A, OWNER_ID)
+
+
 # ---------------------------------------------------------------------------
 # members_shared flag: did the actor actually expose its membership?
 #   paged (`first`) or inline (items/orderedItems) -> True

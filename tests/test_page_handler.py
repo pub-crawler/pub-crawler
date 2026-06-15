@@ -262,6 +262,35 @@ async def test_filtered_page_with_next_but_no_items_still_pages_on():
     assert [e async for e in graph.all_edges()] == []
 
 
+async def test_enqueues_a_page_job_for_an_embedded_next_page_object():
+    # AP allows `next` to be an embedded OrderedCollectionPage object, not just a
+    # URL. We don't walk it inline — we enqueue a page job for its id. Crucially:
+    # page_id is the id string, never the dict (no urlsplit-on-a-dict crash).
+    doc = page_doc([ITEM_A])
+    doc["next"] = {
+        "type": "OrderedCollectionPage",
+        "id": NEXT_ID,
+        "orderedItems": [ITEM_B],
+    }
+    client = FakeActivityPubClient(doc=doc)
+    dis = FakeDispatcher()
+    graph = FakeGraph()
+    await graph.ensure_node(OWNER_ID)
+
+    await PageHandler(client, dis, graph).handle(input_job())
+
+    # The current page's member is walked; the embedded next is enqueued by id,
+    # not walked inline.
+    assert await graph.has_edge(ITEM_A, OWNER_ID)
+    assert not await graph.has_edge(ITEM_B, OWNER_ID)
+    assert [j for j in dis.enqueued if j["job_type"] == "page"] == [
+        next_page_job(NEXT_ID)
+    ]
+    assert [j for j in dis.enqueued if j["job_type"] == "actor"] == [
+        actor_job(ITEM_A, DEPTH + 1)
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Page-walk progress recorded on the owner node, keyed by direction
 #   {direction}_last_page             -> the page just visited

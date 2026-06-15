@@ -30,18 +30,23 @@ class CollectionHandler(Handler):
                 props[f"{direction}_count"] = json["totalItems"]
 
             if depth < self.max_depth:
-                first = json.get("first", None)
-                if first:
-                    props[f"{direction}_members_shared"] = True
-                    await self.dispatcher.enqueue(
-                        {
-                            "job_type": "page",
-                            "page_id": first,
-                            "owner_id": owner_id,
-                            "direction": direction,
-                            "depth": depth,
-                        }
-                    )
+                if "first" in json:
+                    first_id = None
+                    if isinstance(json.get("first"), dict) and isinstance(json["first"].get("id"), str):
+                        first_id = json["first"].get("id")
+                    elif isinstance(json.get("first"), str) and json["first"]:
+                        first_id = json["first"]
+                    if first_id:
+                        props[f"{direction}_members_shared"] = True
+                        await self.dispatcher.enqueue(
+                            {
+                                "job_type": "page",
+                                "page_id": first_id,
+                                "owner_id": owner_id,
+                                "direction": direction,
+                                "depth": depth,
+                            }
+                        )
                 else:
                     items = json.get("items", json.get("orderedItems", None))
                     if items:
