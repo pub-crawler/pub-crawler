@@ -67,8 +67,17 @@ class ActivityPubClient:
         if 300 <= response.status_code < 400:
             if recursions_left <= 0:
                 raise httpx.TooManyRedirects("Too many redirects")
+            if "location" not in response.headers:
+                raise Exception("No Location header for redirect")
             return await self._get_with_headers(
-                urljoin(url, response.headers["Location"]), recursions_left - 1
+                urljoin(url, response.headers.get("location")), recursions_left - 1
             )
         response.raise_for_status()
+        content_type = response.headers.get("content-type")
+        if not content_type:
+            raise ValueError("No content-type")
+        base_type = content_type.split(";", 1)[0]
+        if (not base_type.endswith("+json") and
+             base_type != "application/json"):
+            raise ValueError(f"Non-JSON content type: {content_type}")
         return response.json(), response.headers

@@ -19,6 +19,8 @@ Assumed constructor (flag if different):
   ActivityPubClient(key_id, private_key_pem, general, paged, burst, transport=None)
 """
 
+import json
+
 import httpx
 import pytest
 
@@ -169,6 +171,81 @@ async def test_get_raises_on_connection_error(keypair):
 
     with pytest.raises(httpx.RequestError):
         await make_client(handler, pem).get(URL)
+
+
+# ---------------------------------------------------------------------------
+# Non-AS2 / unparseable 2xx bodies
+#
+# A 200 is not a promise of an ActivityStreams document: a server can answer a
+# signed AP GET with an HTML login/interstitial page (that still 200s), or an
+# empty body. The client must not hand back garbage or crash deep in a caller on
+# .json() -- it raises ValueError, both when the Content-Type isn't AS2/JSON and
+# when an otherwise-acceptable body fails to parse. Callers (the handlers) can
+# then treat it as a failed fetch. application/json is accepted (it's what the
+# happy-path tests above send via json=, and the client's own Accept offers it).
+# ---------------------------------------------------------------------------
+
+
+async def test_get_raises_on_non_json_content_type(keypair):
+    pem, _ = keypair
+
+    def handler(request):
+        # The body is perfectly valid JSON, but the server labels it text/html
+        # (a login interstitial, a misconfigured endpoint). The Content-Type
+        # check must reject it even though .json() would happily parse -- so this
+        # exercises the content-type path, not the parse path.
+        return httpx.Response(
+            200,
+            content=json.dumps({"id": URL, "type": "Person"}),
+            headers={"Content-Type": "text/html; charset=utf-8"},
+        )
+
+    with pytest.raises(ValueError):
+        await make_client(handler, pem).get(URL)
+
+
+async def test_get_raises_on_empty_body(keypair):
+    pem, _ = keypair
+
+    def handler(request):
+        # Empty body even though the type claims AS2 -> nothing to parse.
+        return httpx.Response(
+            200, content=b"", headers={"Content-Type": "application/activity+json"}
+        )
+
+    with pytest.raises(ValueError):
+        await make_client(handler, pem).get(URL)
+
+
+async def test_get_raises_on_malformed_json_body(keypair):
+    pem, _ = keypair
+
+    def handler(request):
+        # Right content type, malformed JSON -> the parse failure is a ValueError.
+        return httpx.Response(
+            200,
+            content=b"{ not json",
+            headers={"Content-Type": "application/activity+json"},
+        )
+
+    with pytest.raises(ValueError):
+        await make_client(handler, pem).get(URL)
+
+
+async def test_get_accepts_activity_json_with_charset_param(keypair):
+    pem, _ = keypair
+    body = {"id": URL, "type": "Person"}
+
+    def handler(request):
+        # AS2 with a charset parameter is still AS2 -> parsed, not rejected
+        # (guards against an exact-string Content-Type check).
+        return httpx.Response(
+            200,
+            content=json.dumps(body),
+            headers={"Content-Type": "application/activity+json; charset=utf-8"},
+        )
+
+    assert await make_client(handler, pem).get(URL) == body
 
 
 # ---------------------------------------------------------------------------
