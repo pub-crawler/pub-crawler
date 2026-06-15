@@ -8,6 +8,15 @@ worker(name, dispatcher): the per-task drain loop.
   A failed job is never marked done, a succeeded job is never failed, and one
   job's failure never stops the worker from draining the next.
 
+reap(dispatcher): one recovery pass -- re-enqueue every job dispatcher.expired()
+  reports as abandoned (enqueue() releases the stale lease and re-queues it).
+  Returns nothing.
+
+reap_worker(dispatcher, sleep): the looping driver -- reap(), then sleep one
+  reaping window (MAX_INFLIGHT), forever. The injected sleep is the test lever:
+  it records the requested delay and steps the loop deterministically (no real
+  waiting). The loop survives a failing pass and stops cleanly on cancel.
+
 Crawler(dispatcher, max_workers):
   start():  spawn max_workers tasks, each running the worker loop.
   finish(): run to completion -- await dispatcher.join() until the queue drains,
@@ -31,11 +40,22 @@ import asyncio
 
 import pytest
 
-from pub_crawler.crawler import Crawler, worker
+from pub_crawler.crawler import Crawler, reap, reap_worker, worker
+from pub_crawler.dispatcher import MAX_INFLIGHT
 
 
 def job(n):
     return {"job_type": "actor", "tag": n}
+
+
+async def _until(predicate, timeout=1.0):
+    """Yield to the loop until predicate() holds, bounded so a stuck test fails."""
+
+    async def spin():
+        while not predicate():
+            await asyncio.sleep(0)
+
+    await asyncio.wait_for(spin(), timeout=timeout)
 
 
 # ---------------------------------------------------------------------------
@@ -146,6 +166,130 @@ async def test_worker_exits_when_get_returns_none():
 
 
 # ---------------------------------------------------------------------------
+# reap(): one recovery pass over abandoned (expired) leases
+# ---------------------------------------------------------------------------
+
+
+class ReapDispatcher:
+    """Records what reap() re-enqueues; expired() reports the abandoned leases."""
+
+    def __init__(self, expired_jobs=()):
+        self._expired = list(expired_jobs)
+        self.enqueued = []
+
+    async def expired(self):
+        return list(self._expired)
+
+    async def enqueue(self, job):
+        self.enqueued.append(job)
+
+
+async def test_reap_reenqueues_every_expired_job():
+    a, b, c = job("a"), job("b"), job("c")
+    dis = ReapDispatcher([a, b, c])
+
+    result = await reap(dis)
+
+    # Every abandoned job is handed back to enqueue() (which releases its stale
+    # lease and re-queues it), and reap() itself returns nothing.
+    assert dis.enqueued == [a, b, c]
+    assert result is None
+
+
+async def test_reap_with_nothing_expired_is_a_noop():
+    dis = ReapDispatcher([])
+
+    result = await reap(dis)
+
+    assert dis.enqueued == []
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# reap_worker(): the looping driver -- reap, then sleep a window, repeat
+# ---------------------------------------------------------------------------
+
+
+class StopLoop(Exception):
+    """Raised by the injected sleep to end the otherwise-infinite driver loop."""
+
+
+class CountingSleep:
+    """Records each requested delay; raises StopLoop on the Nth call so the
+    driver runs a known number of iterations without ever waiting."""
+
+    def __init__(self, stop_after):
+        self.durations = []
+        self._stop_after = stop_after
+
+    async def __call__(self, ms):
+        self.durations.append(ms)
+        if len(self.durations) >= self._stop_after:
+            raise StopLoop
+
+
+class FlakyReapDispatcher:
+    """expired() raises on its first call, then recovers a job on later calls --
+    to prove a failed pass doesn't kill the loop."""
+
+    def __init__(self):
+        self.expired_calls = 0
+        self.enqueued = []
+
+    async def expired(self):
+        self.expired_calls += 1
+        if self.expired_calls == 1:
+            raise RuntimeError("redis hiccup during expired()")
+        return [job("recovered")]
+
+    async def enqueue(self, job):
+        self.enqueued.append(job)
+
+
+async def test_reap_worker_reaps_then_sleeps_each_iteration():
+    # Each iteration reaps (re-enqueuing the expired job) and then sleeps one
+    # window; the injected sleep stops the loop after the third pass.
+    a = job("a")
+    dis = ReapDispatcher([a])
+    sleep = CountingSleep(stop_after=3)
+
+    with pytest.raises(StopLoop):
+        await reap_worker(dis, sleep)
+
+    assert dis.enqueued == [a, a, a]  # reaped once per iteration
+    assert sleep.durations == [MAX_INFLIGHT, MAX_INFLIGHT, MAX_INFLIGHT]
+
+
+async def test_reap_worker_survives_a_failing_pass():
+    # A pass that raises is logged and swallowed; the loop keeps going.
+    dis = FlakyReapDispatcher()
+    sleep = CountingSleep(stop_after=2)
+
+    with pytest.raises(StopLoop):
+        await reap_worker(dis, sleep)
+
+    assert dis.expired_calls == 2  # ran a second pass after the first raised
+    assert dis.enqueued == [job("recovered")]  # second pass recovered the job
+
+
+async def test_reap_worker_stops_cleanly_on_cancel():
+    # Parked in sleep, a cancel unwinds the driver (sleep is outside the loop's
+    # try, so CancelledError propagates) rather than being swallowed.
+    dis = ReapDispatcher([job("a")])
+    parked = asyncio.Event()  # never set -> sleep blocks forever
+
+    async def blocking_sleep(ms):
+        await parked.wait()
+
+    task = asyncio.create_task(reap_worker(dis, blocking_sleep))
+    await _until(lambda: dis.enqueued == [job("a")])  # one pass done, now parked
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
+# ---------------------------------------------------------------------------
 # Crawler: start()/finish()/abort() over a worker pool
 # ---------------------------------------------------------------------------
 
@@ -195,16 +339,6 @@ class FakeDispatcher:
     async def join(self):
         while self._jobs or self._in_flight > 0:
             await asyncio.sleep(0)
-
-
-async def _until(predicate, timeout=1.0):
-    """Yield to the loop until predicate() holds, bounded so a stuck test fails."""
-
-    async def spin():
-        while not predicate():
-            await asyncio.sleep(0)
-
-    await asyncio.wait_for(spin(), timeout=timeout)
 
 
 async def test_start_runs_max_workers_concurrently():
