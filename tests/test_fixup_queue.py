@@ -61,7 +61,9 @@ async def test_preserves_fifo_order_of_the_old_counters():
 
     await fixup_queue(r)
 
-    order = [json.loads(m.split("|", 1)[1])["n"] for m, _ in await members_with_scores(r)]
+    order = [
+        json.loads(m.split("|", 1)[1])["n"] for m, _ in await members_with_scores(r)
+    ]
     assert order == [2, 10, 91, 411192]  # numeric insertion order, not lexicographic
 
 

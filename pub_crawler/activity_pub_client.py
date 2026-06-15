@@ -39,12 +39,11 @@ class ActivityPubClient:
             return max(
                 self.paged.next_available(origin),
                 self.general.next_available(origin),
-                self.burst.next_available(origin)
+                self.burst.next_available(origin),
             )
         else:
             return max(
-                self.general.next_available(origin),
-                self.burst.next_available(origin)
+                self.general.next_available(origin), self.burst.next_available(origin)
             )
 
     async def _get_with_headers(self, url, recursions_left):

@@ -314,7 +314,9 @@ class FakeDispatcher:
 
     async def get(self):
         while True:
-            if self._stopped:  # checked at the TOP: a stopped dispatcher hands out nothing
+            if (
+                self._stopped
+            ):  # checked at the TOP: a stopped dispatcher hands out nothing
                 return None
             if self._jobs:
                 self._in_flight += 1

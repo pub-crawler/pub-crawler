@@ -47,8 +47,7 @@ class WebfingerClient:
         hostname = wf.split("@")[-1]
         origin = f"https://{hostname}"
         return max(
-            self.general.next_available(origin),
-            self.burst.next_available(origin)
+            self.general.next_available(origin), self.burst.next_available(origin)
         )
 
     def _normalize(self, wf):

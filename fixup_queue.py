@@ -28,8 +28,8 @@ import logging
 
 from pub_crawler.dispatcher import QUEUE, iso_utc
 
-SCAN_COUNT = 1000   # ZSCAN per-call batch hint (fewer round-trips than the default)
-WRITE_BATCH = 500   # members rewritten per pipeline
+SCAN_COUNT = 1000  # ZSCAN per-call batch hint (fewer round-trips than the default)
+WRITE_BATCH = 500  # members rewritten per pipeline
 
 
 def _is_old_member(member):

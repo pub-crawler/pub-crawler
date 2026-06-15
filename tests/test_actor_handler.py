@@ -390,8 +390,8 @@ def property_value(name, value):
 
 
 async def test_packs_property_value_attachments_into_properties():
-    pub = "<a href=\"https://cosocial.ca/@evan\">cosocial.ca/@evan</a>"
-    work = "<a href=\"https://social.openearth.org/@evan\">social.openearth.org/@evan</a>"
+    pub = '<a href="https://cosocial.ca/@evan">cosocial.ca/@evan</a>'
+    work = '<a href="https://social.openearth.org/@evan">social.openearth.org/@evan</a>'
     actor = {
         **DISCOVERABLE_ACTOR,
         "attachment": [property_value("Public", pub), property_value("Work", work)],
@@ -475,7 +475,10 @@ async def test_omitted_attachment_leaves_properties_absent():
 
 async def test_attachment_without_any_property_values_leaves_properties_absent():
     # An attachment list with no PropertyValue entries -> no property at all.
-    actor = {**DISCOVERABLE_ACTOR, "attachment": [{"type": "Image", "url": "https://x/y.png"}]}
+    actor = {
+        **DISCOVERABLE_ACTOR,
+        "attachment": [{"type": "Image", "url": "https://x/y.png"}],
+    }
     client = FakeActivityPubClient(actor=actor)
     graph = FakeGraph()
 

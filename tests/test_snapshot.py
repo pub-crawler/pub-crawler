@@ -93,7 +93,9 @@ async def test_escapes_control_chars_and_non_ascii(tmp_path):
 
     await snapshot(g, str(out))
 
-    out.read_text(encoding="ascii")  # pure ASCII: raises if a raw non-ASCII byte slipped through
+    out.read_text(
+        encoding="ascii"
+    )  # pure ASCII: raises if a raw non-ASCII byte slipped through
     read = nx.read_gml(str(out))  # a raw \n would split the string and break the parse
     assert read.nodes[EVAN]["name"] == name
 

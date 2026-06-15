@@ -171,8 +171,12 @@ async def test_count_does_not_clobber_owner_metadata():
         collection_job(FOLLOWERS_ID, "followers", 0)
     )
 
-    assert await graph.get_node_property(OWNER_ID, "followers_count") == TOTAL  # count under a distinct key...
-    assert await graph.get_node_property(OWNER_ID, "followers") == FOLLOWERS_ID  # ...URL survives
+    assert (
+        await graph.get_node_property(OWNER_ID, "followers_count") == TOTAL
+    )  # count under a distinct key...
+    assert (
+        await graph.get_node_property(OWNER_ID, "followers") == FOLLOWERS_ID
+    )  # ...URL survives
     assert await graph.get_node_property(OWNER_ID, "type") == "Person"
 
 
@@ -465,7 +469,9 @@ async def test_paged_collection_marks_members_shared(direction, collection_id):
         collection_job(collection_id, direction, 0)
     )
 
-    assert await graph.get_node_property(OWNER_ID, f"{direction}_members_shared") is True
+    assert (
+        await graph.get_node_property(OWNER_ID, f"{direction}_members_shared") is True
+    )
 
 
 @pytest.mark.parametrize(
@@ -482,7 +488,9 @@ async def test_inline_collection_marks_members_shared(direction, collection_id):
         collection_job(collection_id, direction, 0)
     )
 
-    assert await graph.get_node_property(OWNER_ID, f"{direction}_members_shared") is True
+    assert (
+        await graph.get_node_property(OWNER_ID, f"{direction}_members_shared") is True
+    )
 
 
 @pytest.mark.parametrize(
@@ -541,7 +549,9 @@ async def test_records_http_status_200_on_success(direction, collection_id):
     [("followers", FOLLOWERS_ID), ("following", FOLLOWING_ID)],
 )
 @pytest.mark.parametrize("status", [404, 410, 403, 401])
-async def test_records_http_status_for_error_responses(status, direction, collection_id):
+async def test_records_http_status_for_error_responses(
+    status, direction, collection_id
+):
     client = FakeActivityPubClient(error=http_status_error(status, collection_id))
     dis = FakeDispatcher()
     graph = FakeGraph()

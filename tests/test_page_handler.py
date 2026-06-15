@@ -285,7 +285,9 @@ async def test_records_last_page_and_marks_complete_on_a_terminal_page(direction
         == 200
     )
     # No `next` -> we reached the end.
-    assert await graph.get_node_property(OWNER_ID, f"{direction}_pages_complete") is True
+    assert (
+        await graph.get_node_property(OWNER_ID, f"{direction}_pages_complete") is True
+    )
 
 
 @pytest.mark.parametrize("direction", ["followers", "following"])

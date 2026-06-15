@@ -22,7 +22,9 @@ async def fetch(id, *, transport=None, private_key_pem=None):
     paged = FixedWindowCounter(300, 15 * 60 * 1000)
     burst = FixedWindowCounter(10, 10 * 1000)
     wf = WebfingerClient(general, burst, transport=transport)
-    ap = ActivityPubClient(KEY_ID, private_key_pem, general, paged, burst, transport=transport)
+    ap = ActivityPubClient(
+        KEY_ID, private_key_pem, general, paged, burst, transport=transport
+    )
     try:
         return await _fetch(id, wf, ap)
     finally:
