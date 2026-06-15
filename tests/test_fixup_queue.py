@@ -16,7 +16,7 @@ import json
 import pytest
 from fakeredis import FakeAsyncRedis, FakeServer
 
-from fixup_queue import fixup_queue
+from fixup_queue import WRITE_BATCH, fixup_queue
 from pub_crawler.dispatcher import QUEUE, iso_utc
 
 
@@ -78,3 +78,24 @@ async def test_is_idempotent_and_leaves_new_members_alone():
     assert first == 1
     assert second == 0  # nothing left in the old format
     assert after_first == after_second  # already-migrated members untouched
+
+
+async def test_migrates_more_members_than_one_write_batch():
+    # Cross several write-batch boundaries so the flush/clear logic is exercised,
+    # not just a single trailing flush. Every member must be migrated exactly once.
+    r = fake_redis()
+    count = WRITE_BATCH * 2 + 5
+    for counter in range(count):
+        job = {"job_type": "actor", "n": counter}
+        await r.zadd(QUEUE, {f"{counter}:{job_str(job)}": 500.0})
+
+    migrated = await fixup_queue(r)
+
+    assert migrated == count
+    members = await members_with_scores(r)
+    assert len(members) == count
+    # Every surviving member is in the new format (none left as counter:job)...
+    assert all("|" in m for m, _ in members)
+    # ...and the full set of jobs round-trips intact, none dropped or duplicated.
+    ns = sorted(json.loads(m.split("|", 1)[1])["n"] for m, _ in members)
+    assert ns == list(range(count))
