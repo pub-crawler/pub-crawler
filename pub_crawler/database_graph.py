@@ -27,6 +27,20 @@ class DatabaseGraph:
                 label,
             )
 
+    async def ensure_nodes(self, labels: list[str]) -> None:
+        to_upsert = list(filter(lambda l: l not in self._cache, labels))
+        if not to_upsert:
+            return
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO node (label)
+                SELECT unnest($1::text[])
+                ON CONFLICT (label) DO NOTHING
+                """,
+                to_upsert,
+            )
+
     async def ensure_edge(self, from_label: str, to_label: str) -> None:
         async with self._pool.acquire() as conn:
             from_node = await self._node_id(conn, from_label)
@@ -37,6 +51,34 @@ class DatabaseGraph:
                 """,
                 from_node,
                 to_node,
+            )
+
+    async def ensure_from_edges(self, from_label: str, to_labels: list[str]) -> None:
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO edge (from_node, to_node)
+                SELECT f.id, t.id
+                FROM node f, node t
+                WHERE f.label = $1 AND t.label = ANY($2::text[])
+                ON CONFLICT (from_node, to_node) DO NOTHING
+                """,
+                from_label,
+                to_labels,
+            )
+
+    async def ensure_to_edges(self, from_labels: list[str], to_label: str) -> None:
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO edge (from_node, to_node)
+                SELECT f.id, t.id
+                FROM node f, node t
+                WHERE f.label = ANY($1::text[]) AND t.label = $2
+                ON CONFLICT (from_node, to_node) DO NOTHING
+                """,
+                from_labels,
+                to_label,
             )
 
     async def has_node(self, label: str) -> bool:
@@ -91,6 +133,40 @@ class DatabaseGraph:
                 json.dumps(value),
             )
 
+    async def set_nodes_property(
+        self, labels: list[str], name: str, value: Any
+    ) -> None:
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO node_property (id, name, value)
+                SELECT n.id, $2 as name, $3 as value
+                FROM node n
+                WHERE n.label = ANY($1::text[])
+                ON CONFLICT (id, name) DO UPDATE
+                SET value = EXCLUDED.value,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                labels,
+                name,
+                json.dumps(value),
+            )
+
+    async def set_node_properties(self, label: str, properties: dict[str, Any]) -> None:
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO node_property (id, name, value)
+                SELECT n.id, kv.key, kv.value
+                FROM node n, jsonb_each($2::jsonb) AS kv
+                WHERE n.label = $1
+                ON CONFLICT (id, name) DO UPDATE
+                SET value = EXCLUDED.value, updated_at = CURRENT_TIMESTAMP
+                """,
+                label,
+                json.dumps(properties),
+            )
+
     async def set_edge_property(
         self, from_label: str, to_label: str, name: str, value: Any
     ) -> None:
@@ -111,6 +187,65 @@ class DatabaseGraph:
                 json.dumps(value),
             )
 
+    async def set_edge_properties(
+        self, from_label: str, to_label: str, properties: dict[str, Any]
+    ) -> None:
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO edge_property (from_node, to_node, name, value)
+                SELECT f.id, t.id, kv.key, kv.value
+                FROM node f, node t, jsonb_each($3::jsonb) AS kv
+                WHERE f.label = $1
+                AND t.label = $2
+                ON CONFLICT (from_node, to_node, name) DO UPDATE
+                SET value = EXCLUDED.value, updated_at = CURRENT_TIMESTAMP
+                """,
+                from_label,
+                to_label,
+                json.dumps(properties),
+            )
+
+    async def set_from_edges_property(
+        self, from_label: str, to_labels: list[str], name: str, value: Any
+    ) -> None:
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO edge_property (from_node, to_node, name, value)
+                SELECT f.id, t.id, $3, $4
+                FROM node f, node t
+                WHERE f.label = $1
+                AND t.label = ANY($2::text[])
+                ON CONFLICT (from_node, to_node, name) DO UPDATE
+                SET value = EXCLUDED.value, updated_at = CURRENT_TIMESTAMP
+                """,
+                from_label,
+                to_labels,
+                name,
+                json.dumps(value),
+            )
+
+    async def set_to_edges_property(
+        self, from_labels: list[str], to_label: str, name: str, value: Any
+    ) -> None:
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO edge_property (from_node, to_node, name, value)
+                SELECT f.id, t.id, $3, $4
+                FROM node f, node t
+                WHERE f.label = ANY($1::text[])
+                AND t.label = $2
+                ON CONFLICT (from_node, to_node, name) DO UPDATE
+                SET value = EXCLUDED.value, updated_at = CURRENT_TIMESTAMP
+                """,
+                from_labels,
+                to_label,
+                name,
+                json.dumps(value),
+            )
+
     async def get_node_property(self, label: str, name: str) -> Any:
         async with self._pool.acquire() as conn:
             id = await self._node_id(conn, label)
@@ -125,6 +260,23 @@ class DatabaseGraph:
                 return None
             else:
                 return json.loads(value)
+
+    async def get_nodes_property(self, labels: list[str], name: str) -> dict[str, Any]:
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT n.label as label, np.value as value
+                FROM node n join node_property np on n.id = np.id
+                WHERE n.label = ANY($1::text[])
+                AND np.name = $2
+                """,
+                labels,
+                name,
+            )
+            props = {}
+            for row in rows:
+                props[row["label"]] = json.loads(row["value"])
+            return props
 
     async def get_edge_property(self, from_label: str, to_label: str, name: str) -> Any:
         async with self._pool.acquire() as conn:
@@ -161,7 +313,9 @@ class DatabaseGraph:
                 props[row["name"]] = json.loads(row["value"])
             return props
 
-    async def get_edge_properties(self, from_label: str, to_label: str) -> dict[str, Any]:
+    async def get_edge_properties(
+        self, from_label: str, to_label: str
+    ) -> dict[str, Any]:
         async with self._pool.acquire() as conn:
             from_node = await self._node_id(conn, from_label)
             to_node = await self._node_id(conn, to_label)
@@ -177,6 +331,52 @@ class DatabaseGraph:
             props = {}
             for row in rows:
                 props[row["name"]] = json.loads(row["value"])
+            return props
+
+    async def get_from_edges_property(
+        self, from_label: str, to_labels: list[str], name: str
+    ) -> dict[str, Any]:
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT t.label as label, ep.value as value
+                FROM edge_property ep
+                JOIN node f on ep.from_node = f.id
+                JOIN node t on ep.to_node = t.id
+                WHERE f.label = $1
+                AND t.label = ANY($2::text[])
+                AND ep.name = $3
+                """,
+                from_label,
+                to_labels,
+                name,
+            )
+            props = {}
+            for row in rows:
+                props[row["label"]] = json.loads(row["value"])
+            return props
+
+    async def get_to_edges_property(
+        self, from_labels: list[str], to_label: str, name: str
+    ) -> dict[str, Any]:
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT f.label as label, ep.value as value
+                FROM edge_property ep
+                JOIN node f on ep.from_node = f.id
+                JOIN node t on ep.to_node = t.id
+                WHERE f.label = ANY($1::text[])
+                AND t.label = $2
+                AND ep.name = $3
+                """,
+                from_labels,
+                to_label,
+                name,
+            )
+            props = {}
+            for row in rows:
+                props[row["label"]] = json.loads(row["value"])
             return props
 
     async def all_nodes(self) -> AsyncIterator[tuple[int, str, dict[str, Any]]]:

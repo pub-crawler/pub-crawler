@@ -173,6 +173,71 @@ class FakeGraph:
     async def get_edge_properties(self, from_label, to_label):
         return self._edges[from_label][to_label]
 
+    # --- bulk variants (same semantics as the singular methods, in a loop) ---
+
+    async def ensure_nodes(self, labels):
+        for label in labels:
+            await self.ensure_node(label)
+
+    async def ensure_from_edges(self, from_label, to_labels):
+        for to_label in to_labels:
+            await self.ensure_edge(from_label, to_label)
+
+    async def ensure_to_edges(self, from_labels, to_label):
+        for from_label in from_labels:
+            await self.ensure_edge(from_label, to_label)
+
+    async def set_nodes_property(self, labels, name, value):
+        for label in labels:
+            await self.set_node_property(label, name, value)
+
+    async def set_node_properties(self, label, properties):
+        for name, value in properties.items():
+            await self.set_node_property(label, name, value)
+
+    async def set_edge_properties(self, from_label, to_label, properties):
+        for name, value in properties.items():
+            await self.set_edge_property(from_label, to_label, name, value)
+
+    async def set_from_edges_property(self, from_label, to_labels, name, value):
+        for to_label in to_labels:
+            await self.set_edge_property(from_label, to_label, name, value)
+
+    async def set_to_edges_property(self, from_labels, to_label, name, value):
+        for from_label in from_labels:
+            await self.set_edge_property(from_label, to_label, name, value)
+
+    async def get_nodes_property(self, labels, name):
+        # keyed by label; absent (missing node or missing property) omitted
+        result = {}
+        for label in labels:
+            if label in self._nodes and name in self._nodes[label]:
+                result[label] = self._nodes[label][name]
+        return result
+
+    async def get_from_edges_property(self, from_label, to_labels, name):
+        # keyed by to_label (the varying endpoint); absent omitted
+        result = {}
+        for to_label in to_labels:
+            if self._has_edge_property(from_label, to_label, name):
+                result[to_label] = self._edges[from_label][to_label][name]
+        return result
+
+    async def get_to_edges_property(self, from_labels, to_label, name):
+        # keyed by from_label (the varying endpoint); absent omitted
+        result = {}
+        for from_label in from_labels:
+            if self._has_edge_property(from_label, to_label, name):
+                result[from_label] = self._edges[from_label][to_label][name]
+        return result
+
+    def _has_edge_property(self, from_label, to_label, name):
+        return (
+            from_label in self._edges
+            and to_label in self._edges[from_label]
+            and name in self._edges[from_label][to_label]
+        )
+
     async def all_nodes(self):
         for label, props in self._nodes.items():
             id = self._ids[label]

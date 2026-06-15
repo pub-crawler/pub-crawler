@@ -254,3 +254,113 @@ async def test_concurrent_operations_share_the_connection_safely(graph):
 
     for i, label in enumerate(labels):
         assert await graph.get_node_property(label, "n") == i
+
+
+# ---------------------------------------------------------------------------
+# bulk variants — one round-trip for many nodes/edges/props. Same observable
+# behaviour as the singular methods; the edge bulk-ops require the nodes (and,
+# for the edge-property setters, the edges) to already exist.
+# ---------------------------------------------------------------------------
+
+
+async def test_ensure_nodes_creates_all_and_is_idempotent(graph):
+    await graph.ensure_nodes([])  # empty is a no-op, not an error
+    await graph.ensure_nodes([A, B, C])
+    await graph.ensure_nodes([A, B, C])  # idempotent
+    assert await graph.has_node(A)
+    assert await graph.has_node(B)
+    assert await graph.has_node(C)
+
+
+async def test_ensure_from_edges_fans_out_directed(graph):
+    await graph.ensure_nodes([A, B, C])  # edges require pre-existing nodes
+    await graph.ensure_from_edges(A, [B, C])
+    assert await graph.has_edge(A, B)
+    assert await graph.has_edge(A, C)
+    assert not await graph.has_edge(B, A)  # directed
+
+
+async def test_ensure_to_edges_fans_in_directed(graph):
+    await graph.ensure_nodes([A, B, C])
+    await graph.ensure_to_edges([A, B], C)
+    assert await graph.has_edge(A, C)
+    assert await graph.has_edge(B, C)
+    assert not await graph.has_edge(C, A)  # directed
+
+
+async def test_set_nodes_property_sets_same_on_every_node(graph):
+    await graph.ensure_nodes([A, B])
+    await graph.set_nodes_property([A, B], "depth", 3)
+    assert await graph.get_node_property(A, "depth") == 3
+    assert await graph.get_node_property(B, "depth") == 3
+
+
+async def test_set_node_properties_sets_many_on_one_node(graph):
+    await graph.ensure_node(A)
+    await graph.set_node_properties(A, {"type": "Person", "depth": 1})
+    assert await graph.get_node_property(A, "type") == "Person"
+    assert await graph.get_node_property(A, "depth") == 1
+
+
+async def test_set_edge_properties_sets_many_on_one_edge(graph):
+    await graph.ensure_nodes([A, B])
+    await graph.ensure_edge(A, B)
+    await graph.set_edge_properties(A, B, {"from_following": True, "weight": 2})
+    assert await graph.get_edge_property(A, B, "from_following") is True
+    assert await graph.get_edge_property(A, B, "weight") == 2
+
+
+async def test_set_from_edges_property_sets_same_on_fan_out(graph):
+    await graph.ensure_nodes([A, B, C])
+    await graph.ensure_from_edges(A, [B, C])
+    await graph.set_from_edges_property(A, [B, C], "from_following", True)
+    assert await graph.get_edge_property(A, B, "from_following") is True
+    assert await graph.get_edge_property(A, C, "from_following") is True
+
+
+async def test_set_to_edges_property_sets_same_on_fan_in(graph):
+    await graph.ensure_nodes([A, B, C])
+    await graph.ensure_to_edges([A, B], C)
+    await graph.set_to_edges_property([A, B], C, "from_followers", True)
+    assert await graph.get_edge_property(A, C, "from_followers") is True
+    assert await graph.get_edge_property(B, C, "from_followers") is True
+
+
+async def test_get_nodes_property_keyed_by_label_omits_absent(graph):
+    # The last_fetch_date enqueue-gate: only labels that HAVE the property come
+    # back, so the new ones are the set difference.
+    await graph.ensure_nodes([A, B, C])
+    await graph.set_node_property(A, "last_fetch_date", "2026-01-01")
+    await graph.set_node_property(B, "last_fetch_date", "2026-01-02")
+    # C has no last_fetch_date
+
+    result = await graph.get_nodes_property([A, B, C], "last_fetch_date")
+
+    assert result == {A: "2026-01-01", B: "2026-01-02"}  # C omitted
+    assert set([A, B, C]) - result.keys() == {C}  # the "which are new" use case
+
+
+async def test_get_nodes_property_empty_input_is_empty_dict(graph):
+    assert await graph.get_nodes_property([], "anything") == {}
+
+
+async def test_get_from_edges_property_keyed_by_to_label_omits_absent(graph):
+    await graph.ensure_nodes([A, B, C])
+    await graph.ensure_from_edges(A, [B, C])
+    await graph.set_edge_property(A, B, "from_following", True)
+    # A->C has no from_following
+
+    result = await graph.get_from_edges_property(A, [B, C], "from_following")
+
+    assert result == {B: True}  # keyed by to_label, C omitted
+
+
+async def test_get_to_edges_property_keyed_by_from_label_omits_absent(graph):
+    await graph.ensure_nodes([A, B, C])
+    await graph.ensure_to_edges([A, B], C)
+    await graph.set_edge_property(A, C, "from_followers", True)
+    # B->C has no from_followers
+
+    result = await graph.get_to_edges_property([A, B], C, "from_followers")
+
+    assert result == {A: True}  # keyed by from_label, B omitted
