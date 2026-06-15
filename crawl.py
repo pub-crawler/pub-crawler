@@ -33,7 +33,9 @@ def make_dispatcher(
     paged = FixedWindowCounter(300, 15 * 60 * 1000)
     burst = FixedWindowCounter(10, 10 * 1000)
     wfc = WebfingerClient(general, burst, transport=transport)
-    ac = ActivityPubClient(key_id, private_key_pem_data, general, paged, burst, transport=transport)
+    ac = ActivityPubClient(
+        key_id, private_key_pem_data, general, paged, burst, transport=transport
+    )
     dispatcher = Dispatcher(redis)
     dispatcher.set_handler("webfinger", WebfingerHandler(wfc, dispatcher, G))
     dispatcher.set_handler("actor", ActorHandler(ac, dispatcher, G))
@@ -42,14 +44,6 @@ def make_dispatcher(
     )
     dispatcher.set_handler("page", PageHandler(ac, dispatcher, G))
     return dispatcher
-
-
-async def crawl_graph(dispatcher, *, max_workers=DEFAULT_MAX_WORKERS):
-
-    crawler = Crawler(dispatcher, max_workers)
-
-    await crawler.start()
-    await crawler.finish()
 
 
 async def main(
@@ -70,16 +64,16 @@ async def main(
     G = DatabaseGraph(pool)
 
     try:
-        await crawl_graph(
-            make_dispatcher(
-                r,
-                G,
-                key_id=key_id,
-                private_key_pem_data=private_key_pem_data,
-                max_depth=max_depth,
-            ),
-            max_workers=max_workers,
+        dispatcher = make_dispatcher(
+            r,
+            G,
+            key_id=key_id,
+            private_key_pem_data=private_key_pem_data,
+            max_depth=max_depth,
         )
+        crawler = Crawler(dispatcher, max_workers)
+        await crawler.start()
+        await crawler.finish()
     finally:
         await pool.close()
 

@@ -2,12 +2,12 @@ import asyncio
 from pathlib import Path
 from pub_crawler.database import database_setup
 from pub_crawler.database_graph import DatabaseGraph
+from pub_crawler.crawler import Crawler
 import logging
 import redis.asyncio
 import asyncpg
 from crawl import (
     make_dispatcher,
-    crawl_graph,
     DEFAULT_KEY_ID,
     DEFAULT_PRIVATE_KEY_PEM_FILENAME,
     DEFAULT_MAX_DEPTH,
@@ -38,16 +38,16 @@ async def main(
 
     try:
         await add_seeds(input_filename, r)
-        await crawl_graph(
-            make_dispatcher(
-                r,
-                G,
-                key_id=key_id,
-                private_key_pem_data=private_key_pem_data,
-                max_depth=max_depth,
-            ),
-            max_workers=max_workers,
+        dispatcher = make_dispatcher(
+            r,
+            G,
+            key_id=key_id,
+            private_key_pem_data=private_key_pem_data,
+            max_depth=max_depth,
         )
+        crawler = Crawler(dispatcher, max_workers)
+        await crawler.start()
+        await crawler.finish()
         await snapshot(G, output_filename)
     finally:
         await pool.close()
