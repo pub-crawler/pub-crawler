@@ -2,7 +2,7 @@ import time
 import json
 import asyncio
 from datetime import datetime, timezone
-
+from pub_crawler.job_id import job_id
 
 def _epoch_ms():
     return time.time() * 1000
@@ -23,6 +23,7 @@ def iso_utc(ms):
 QUEUE = "pub_crawler:queue"
 INFLIGHT = "pub_crawler:inflight"
 FAILED = "pub_crawler:failed"
+SEEN = "pub_crawler:seen"
 
 MAX_CLIENTS = 25
 TIME_PER_JOB = 100
@@ -45,12 +46,16 @@ class Dispatcher:
         await handler.handle(job)
 
     async def enqueue(self, job):
+        id = job_id(job)
+        if id is None:
+            raise Exception(f"Unidentifiable job {self._job_to_str(job)}")
         await self._remove_inflight(job)
         handler = self._get_handler(job)
         next_available = handler.next_available(job)
         ts = iso_utc(self.now())
         member = f"{ts}|{self._job_to_str(job)}"
         await self.redis.zadd(QUEUE, {member: next_available})
+        await self.redis.sadd(SEEN, id)
 
     async def get(self):
         while not self._stopped:
@@ -108,6 +113,12 @@ class Dispatcher:
 
     def stop(self):
         self._stopped = True
+
+    async def seen(self, job):
+        id = job_id(job)
+        if id is None:
+            raise Exception(f"Unidentifiable job {self._job_to_str(job)}")
+        return await self.redis.sismember(SEEN, id)
 
     def _get_handler(self, job):
         handler = self._handlers.get(job["job_type"], None)

@@ -54,7 +54,7 @@ class Clock:
 
 
 def actor_job():
-    return {"job_type": "actor", "url": "https://x.example/users/a", "depth": 1}
+    return {"job_type": "actor", "actor_id": "https://x.example/users/a", "depth": 1}
 
 
 # ---------------------------------------------------------------------------
@@ -107,7 +107,7 @@ async def test_enqueue_uses_the_handler_for_the_jobs_own_type():
     dis.set_handler("actor", ah)
     dis.set_handler("collection", ch)
 
-    job = {"job_type": "collection", "url": "https://x.example/c"}
+    job = {"job_type": "collection", "collection_id": "https://x.example/c"}
     await dis.enqueue(job)
 
     # Only the handler for THIS job's type is consulted, and the job round-trips.
@@ -127,7 +127,9 @@ async def test_get_returns_jobs_in_next_available_order():
     dis.set_handler("actor", h)
 
     for na in (300, 100, 200):
-        await dis.enqueue({"job_type": "actor", "na": na})
+        await dis.enqueue(
+            {"job_type": "actor", "actor_id": f"https://x.example/users/{na}", "na": na}
+        )
 
     order = [(await dis.get())["na"] for _ in range(3)]
     assert order == [100, 200, 300]  # soonest first, regardless of insertion order
@@ -138,8 +140,12 @@ async def test_get_breaks_next_available_ties_by_insertion_order():
     dis = Dispatcher(fake_redis())
     dis.set_handler("actor", h)
 
-    await dis.enqueue({"job_type": "actor", "tag": "first"})
-    await dis.enqueue({"job_type": "actor", "tag": "second"})
+    await dis.enqueue(
+        {"job_type": "actor", "actor_id": "https://x.example/users/first", "tag": "first"}
+    )
+    await dis.enqueue(
+        {"job_type": "actor", "actor_id": "https://x.example/users/second", "tag": "second"}
+    )
 
     # Equal priority -> FIFO. Also proves the job dicts are never compared:
     # a missing tiebreaker would raise TypeError here.
@@ -157,7 +163,9 @@ async def test_get_ties_stay_fifo_across_a_digit_width_boundary():
     dis.set_handler("actor", h)
 
     for i in range(11):
-        await dis.enqueue({"job_type": "actor", "tag": i})
+        await dis.enqueue(
+            {"job_type": "actor", "actor_id": f"https://x.example/users/{i}", "tag": i}
+        )
 
     order = [(await dis.get())["tag"] for _ in range(11)]
     assert order == list(range(11))
@@ -231,8 +239,8 @@ async def test_done_takes_the_job_out_of_flight():
 async def test_inflight_lists_every_job_currently_in_flight():
     dis = Dispatcher(fake_redis())
     dis.set_handler("actor", FakeHandler())
-    a = {"job_type": "actor", "tag": "a"}
-    b = {"job_type": "actor", "tag": "b"}
+    a = {"job_type": "actor", "actor_id": "https://x.example/users/a", "tag": "a"}
+    b = {"job_type": "actor", "actor_id": "https://x.example/users/b", "tag": "b"}
     await dis.enqueue(a)
     await dis.enqueue(b)
 
@@ -311,13 +319,13 @@ async def test_expired_excludes_jobs_still_within_their_lease():
     dis = Dispatcher(fake_redis(), now=clock)
     dis.set_handler("actor", FakeHandler())
 
-    old = {"job_type": "actor", "tag": "old"}
+    old = {"job_type": "actor", "actor_id": "https://x.example/users/old", "tag": "old"}
     await dis.enqueue(old)
     old_job = await dis.get()  # deadline = MAX_INFLIGHT
 
     # Lease a second job much later, so its deadline is further out.
     clock.t = MAX_INFLIGHT - 100
-    fresh = {"job_type": "actor", "tag": "fresh"}
+    fresh = {"job_type": "actor", "actor_id": "https://x.example/users/fresh", "tag": "fresh"}
     await dis.enqueue(fresh)
     fresh_job = await dis.get()  # deadline = 2*MAX_INFLIGHT - 100
 
@@ -394,8 +402,8 @@ async def test_fail_records_the_job():
 async def test_failed_lists_every_failed_job():
     dis = Dispatcher(fake_redis())
     dis.set_handler("actor", FakeHandler())
-    a = {"job_type": "actor", "tag": "a"}
-    b = {"job_type": "actor", "tag": "b"}
+    a = {"job_type": "actor", "actor_id": "https://x.example/users/a", "tag": "a"}
+    b = {"job_type": "actor", "actor_id": "https://x.example/users/b", "tag": "b"}
 
     await dis.fail(a)
     await dis.fail(b)
@@ -524,3 +532,112 @@ async def test_stop_is_idempotent():
     dis.stop()
 
     assert await asyncio.wait_for(dis.get(), timeout=1.0) is None
+
+
+# ---------------------------------------------------------------------------
+# seen()/enqueue de-dup: enqueue() records job_id(job) in a Redis set; seen(job)
+# tests membership, so handlers can skip re-queuing duplicates. NOTHING un-sees
+# -- queued, in flight, failed, or done, the id stays in the set. Identity is by
+# job_id, so the SAME resource reached again (e.g. a deeper crawl) reads as
+# already seen. (These use job_id-shaped actor jobs -- a real actor_id field --
+# since enqueue/seen run job_id() on them, unlike the opaque actor_job() above
+# that only the queue mechanics need.)
+# ---------------------------------------------------------------------------
+
+
+def actor_seed(actor_id="https://x.example/users/a", depth=1):
+    return {"job_type": "actor", "actor_id": actor_id, "depth": depth}
+
+
+async def test_a_job_is_not_seen_before_it_is_enqueued():
+    dis = Dispatcher(fake_redis())
+    dis.set_handler("actor", FakeHandler())
+
+    assert not await dis.seen(actor_seed())
+
+
+async def test_enqueue_marks_the_job_seen():
+    dis = Dispatcher(fake_redis())
+    dis.set_handler("actor", FakeHandler())
+    job = actor_seed()
+
+    await dis.enqueue(job)
+
+    assert await dis.seen(job)
+
+
+async def test_seen_is_keyed_by_job_id_not_dict_identity():
+    # The same actor reached at a different depth is the SAME job: enqueuing it
+    # once marks every depth-variant seen.
+    dis = Dispatcher(fake_redis())
+    dis.set_handler("actor", FakeHandler())
+
+    await dis.enqueue(actor_seed(depth=1))
+
+    assert await dis.seen(actor_seed(depth=2))
+
+
+async def test_seen_distinguishes_different_jobs():
+    dis = Dispatcher(fake_redis())
+    dis.set_handler("actor", FakeHandler())
+
+    await dis.enqueue(actor_seed(actor_id="https://x.example/users/a"))
+
+    assert not await dis.seen(actor_seed(actor_id="https://x.example/users/b"))
+
+
+async def test_a_job_stays_seen_after_it_is_done():
+    # Nothing un-sees: completing a job leaves its id in the set, so it is never
+    # re-queued.
+    dis = Dispatcher(fake_redis())
+    dis.set_handler("actor", FakeHandler())
+    job = actor_seed()
+    await dis.enqueue(job)
+    got = await dis.get()
+    await dis.done(got)
+
+    assert await dis.seen(job)
+
+
+async def test_a_job_stays_seen_after_it_fails():
+    dis = Dispatcher(fake_redis())
+    dis.set_handler("actor", FakeHandler())
+    job = actor_seed()
+    await dis.enqueue(job)
+    got = await dis.get()
+    await dis.fail(got)
+
+    assert await dis.seen(job)
+
+
+async def test_re_enqueuing_a_seen_job_keeps_it_seen():
+    # reap()/recovery just enqueue again; that must be safe and idempotent on the
+    # seen set.
+    dis = Dispatcher(fake_redis())
+    dis.set_handler("actor", FakeHandler())
+    job = actor_seed()
+    await dis.enqueue(job)
+
+    await dis.enqueue(job)
+
+    assert await dis.seen(job)
+
+
+async def test_seen_raises_on_an_unidentifiable_job():
+    # A job whose job_id is None (here: actor with no actor_id) can't be tracked;
+    # seen() refuses it loudly rather than querying a junk member.
+    dis = Dispatcher(fake_redis())
+    dis.set_handler("actor", FakeHandler())
+
+    with pytest.raises(Exception):
+        await dis.seen({"job_type": "actor", "depth": 1})
+
+
+async def test_enqueue_raises_on_an_unidentifiable_job():
+    # Same guard on the write side: an unidentifiable job is rejected before it
+    # can reach the queue or the seen set.
+    dis = Dispatcher(fake_redis())
+    dis.set_handler("actor", FakeHandler())
+
+    with pytest.raises(Exception):
+        await dis.enqueue({"job_type": "actor", "depth": 1})
