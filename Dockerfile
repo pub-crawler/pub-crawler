@@ -32,7 +32,7 @@ COPY --from=builder /app/.venv /app/.venv
 
 # Application code only — entry points at the root import the pub_crawler package.
 COPY pub_crawler /app/pub_crawler
-COPY crawl.py main.py add_seeds.py snapshot.py run_migrations.py fetch.py fixup_queue.py /app/
+COPY crawl.py main.py add_seeds.py snapshot.py run_migrations.py fetch.py fixup_queue.py fixup_seen.py /app/
 
 # Run as an unprivileged user.
 RUN useradd --create-home --uid 10001 app && chown -R app /app
