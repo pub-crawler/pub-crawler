@@ -114,7 +114,7 @@ async def add_graph_to_seen(r, G, *, batch_size=WRITE_BATCH):
         if tried % LOG_INTERVAL == 0:
             logging.info(f"{tried} successful jobs seen")
         if "last_fetch_date" not in props:
-            logging.warning(f"Unfetched actor: {label}; skipping")
+            logging.debug(f"Unfetched actor: {label}; skipping")
             continue
         job = {"job_type": "actor", "actor_id": label, "depth": props.get("depth")}
         jid = job_id(job)
