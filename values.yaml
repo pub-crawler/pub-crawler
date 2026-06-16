@@ -1,0 +1,124 @@
+# Default values for pub-crawler.
+
+image:
+  repository: evanp/pub-crawler
+  # Defaults to .Chart.AppVersion when empty.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# Connection strings for your EXISTING in-cluster Postgres and Redis.
+# These include credentials, so they are stored in a Secret.
+database:
+  url: ""   # e.g. postgresql://user:pass@postgres.default.svc:5432/pubcrawler
+redis:
+  url: ""   # e.g. redis://redis.default.svc:6379/0
+
+# Non-secret crawler configuration (rendered into a ConfigMap).
+crawler:
+  keyId: "https://crawler.pub/actor#main-key"
+  maxDepth: 1
+  maxWorkers: 25
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+
+# Private signing key. Rendered into the Secret and mounted as a file at
+# mountPath; PRIVATE_KEY_PEM points the app at that path.
+# KEEP pem OUT OF GIT — supply at install time, e.g.:
+#   helm install ... --set-file privateKey.pem=private.pem
+privateKey:
+  pem: ""
+  mountPath: /etc/pub-crawler/private.pem
+
+# Seeding: add_seeds.py enqueues webfinger addresses (one per line) into Redis.
+# Runs as a pre-install/pre-upgrade hook so the queue is primed before the crawl.
+seed:
+  enabled: true
+  # Webfinger addresses, one per line. For large lists prefer:
+  #   helm install ... --set-file seed.list=seeds.txt
+  list: ""
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 128Mi
+
+# Schema migrations: run_migrations.py as a pre-install/pre-upgrade hook.
+migrations:
+  enabled: true
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 128Mi
+
+# Queue fixup: fixup_queue.py rewrites legacy `counter:job` queue members into
+# the `ts|job` format. Runs as a pre-install/pre-upgrade hook AFTER migrations
+# and BEFORE seeding (hook-weight -7, between -10 and -5). Idempotent — a no-op
+# once the queue is converted — so it's safe to leave enabled, or disable it
+# once every cluster has been migrated.
+fixupQueue:
+  enabled: true
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 128Mi
+
+# The crawl itself — a run-to-completion Job (re-created each helm revision).
+job:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400  # auto-delete finished crawl Jobs after a day
+
+# Snapshot: snapshot.py writes a dated GML to the persistence volume on a schedule.
+snapshot:
+  enabled: true
+  schedule: "0 3 * * *"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+# Persistent volume for snapshot GML output.
+persistence:
+  enabled: true
+  size: 5Gi
+  storageClass: ""
+  accessMode: ReadWriteOnce
+  mountPath: /data
+
+# Pod-level security context. The image runs as uid 10001; fsGroup makes the
+# snapshot PVC writable by that user.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+
+# Container-level security context.
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

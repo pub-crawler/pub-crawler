@@ -1,0 +1,16 @@
+{{- if .Values.seed.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "pub-crawler.fullname" . }}-seeds
+  labels:
+    {{- include "pub-crawler.labels" . | nindent 4 }}
+  annotations:
+    # Early hook so the pre-install seed Job (weight -5) can mount it.
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-20"
+    "helm.sh/hook-delete-policy": before-hook-creation
+data:
+  seeds.txt: |-
+{{ .Values.seed.list | default "" | indent 4 }}
+{{- end }}

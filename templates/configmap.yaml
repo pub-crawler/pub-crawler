@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "pub-crawler.fullname" . }}-config
+  labels:
+    {{- include "pub-crawler.labels" . | nindent 4 }}
+data:
+  KEY_ID: {{ .Values.crawler.keyId | quote }}
+  MAX_DEPTH: {{ .Values.crawler.maxDepth | quote }}
+  MAX_WORKERS: {{ .Values.crawler.maxWorkers | quote }}
+  PRIVATE_KEY_PEM: {{ .Values.privateKey.mountPath | quote }}
