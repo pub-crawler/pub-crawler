@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-16
+
+### Fixed
+
+- Better robustness in the crawler for errors from the dispatcher.
+  Should prevent workers dying off in the crawler. Includes exponential
+  backoff so that high request volume to Redis doesn't kill the whole
+  crawl.
+
+### Added
+
+- Deduplication of jobs before adding them to the queue. Should
+  greatly reduce queue size and job contention.
+- fixup_seen.py script, run once to initialize the seen-jobs
+  data structure, crawler can't be running.
+
 ## [0.3.4] - 2026-06-15
 
 ### Fixed
@@ -104,7 +120,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Crawler max depth defaults to 1.
 - `DatabaseGraph` no longer uses its own transaction.
 
-[Unreleased]: https://github.com/pub-crawler/pub-crawler/compare/v0.3.3...HEAD
+[Unreleased]: https://github.com/pub-crawler/pub-crawler/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/pub-crawler/pub-crawler/compare/v0.3.4...v0.4.0
+[0.3.4]: https://github.com/pub-crawler/pub-crawler/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/pub-crawler/pub-crawler/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/pub-crawler/pub-crawler/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/pub-crawler/pub-crawler/compare/v0.3.0...v0.3.1
