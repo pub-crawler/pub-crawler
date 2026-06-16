@@ -11,9 +11,23 @@ from pub_crawler.job_id import job_id
 
 LOG_INTERVAL = 10_000
 SCAN_COUNT = 1000
+WRITE_BATCH = 1000
+
 
 async def del_seen(r):
     await r.delete(SEEN)
+
+
+async def batch_sadd(r, batch):
+    if not batch:
+        return 0
+    async with r.pipeline(transaction=False) as pipe:
+        for jid in batch:
+            pipe.sadd(SEEN, jid)
+        await pipe.execute()
+    count = len(batch)
+    batch.clear()
+    return count
 
 
 async def add_in_flight_to_seen(r):
@@ -48,6 +62,7 @@ async def add_in_flight_to_seen(r):
 async def add_failed_to_seen(r):
     tried = 0
     succeeded = 0
+    batch = []
     async for key in r.sscan_iter(FAILED, count=SCAN_COUNT):
         tried += 1
         if tried % LOG_INTERVAL == 0:
@@ -62,19 +77,17 @@ async def add_failed_to_seen(r):
         if jid is None:
             logging.warning(f"Unidentifiable failed job: {key}; skipping")
             continue
-        try:
-            await r.sadd(SEEN, jid)
-        except Exception as e:
-            logging.warning(f"Exception adding failed job {jid} to seen: {e}; skipping")
-            continue
-        logging.debug(f"Added failed job {jid}")
-        succeeded += 1
+        batch.append(jid)
+        if len(batch) >= WRITE_BATCH:
+            succeeded = succeeded + await batch_sadd(r, batch)
+    succeeded = succeeded + await batch_sadd(r, batch)
     return tried, succeeded
 
 
 async def add_graph_to_seen(r, G):
     tried = 0
     succeeded = 0
+    batch = []
     async for _, label, props in G.all_nodes():
         tried += 1
         if tried % LOG_INTERVAL == 0:
@@ -87,15 +100,10 @@ async def add_graph_to_seen(r, G):
         if jid is None:
             logging.warning(f"Unidentifiable successful job: {job}; skipping")
             continue
-        try:
-            await r.sadd(SEEN, jid)
-        except Exception as e:
-            logging.warning(
-                f"Exception adding successful job {jid} to seen: {e}; skipping"
-            )
-            continue
-        logging.debug(f"Added successful job {jid}")
-        succeeded += 1
+        batch.append(jid)
+        if len(batch) >= WRITE_BATCH:
+            succeeded = succeeded + await batch_sadd(r, batch)
+    succeeded = succeeded + await batch_sadd(r, batch)
     return tried, succeeded
 
 
