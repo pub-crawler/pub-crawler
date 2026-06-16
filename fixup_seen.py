@@ -10,7 +10,7 @@ from pub_crawler.dispatcher import QUEUE, INFLIGHT, FAILED, SEEN
 from pub_crawler.job_id import job_id
 
 LOG_INTERVAL = 10_000
-
+SCAN_COUNT = 1000
 
 async def del_seen(r):
     await r.delete(SEEN)
@@ -48,7 +48,7 @@ async def add_in_flight_to_seen(r):
 async def add_failed_to_seen(r):
     tried = 0
     succeeded = 0
-    async for key in r.sscan_iter(FAILED):
+    async for key in r.sscan_iter(FAILED, count=SCAN_COUNT):
         tried += 1
         if tried % LOG_INTERVAL == 0:
             logging.info(f"{tried} failed jobs seen")
@@ -103,7 +103,7 @@ async def add_queue_to_seen_and_dedupe(r):
     tried = 0
     succeeded = 0
     deduped = 0
-    async for member, _ in r.zscan_iter(QUEUE):
+    async for member, _ in r.zscan_iter(QUEUE, count=SCAN_COUNT):
         tried += 1
         if tried % LOG_INTERVAL == 0:
             logging.info(f"{tried} queue jobs seen")
