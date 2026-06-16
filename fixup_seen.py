@@ -9,14 +9,20 @@ from pub_crawler.database_graph import DatabaseGraph
 from pub_crawler.dispatcher import QUEUE, INFLIGHT, FAILED, SEEN
 from pub_crawler.job_id import job_id
 
+LOG_INTERVAL = 10_000
+
 
 async def del_seen(r):
     await r.delete(SEEN)
-    logging.info(f"Deleted seen set")
 
 
 async def add_in_flight_to_seen(r):
+    tried = 0
+    succeeded = 0
     for key in await r.hkeys(INFLIGHT):
+        tried += 1
+        if tried % LOG_INTERVAL == 0:
+            logging.info(f"{tried} in-flight jobs seen")
         job = None
         try:
             job = json.loads(key)
@@ -34,11 +40,18 @@ async def add_in_flight_to_seen(r):
                 f"Exception adding in-flight job {jid} to seen: {e}; skipping"
             )
             continue
-        logging.info(f"Added in-flight job {jid}")
+        logging.debug(f"Added in-flight job {jid}")
+        succeeded += 1
+    return tried, succeeded
 
 
 async def add_failed_to_seen(r):
+    tried = 0
+    succeeded = 0
     async for key in r.sscan_iter(FAILED):
+        tried += 1
+        if tried % LOG_INTERVAL == 0:
+            logging.info(f"{tried} failed jobs seen")
         job = None
         try:
             job = json.loads(key)
@@ -54,11 +67,18 @@ async def add_failed_to_seen(r):
         except Exception as e:
             logging.warning(f"Exception adding failed job {jid} to seen: {e}; skipping")
             continue
-        logging.info(f"Added failed job {jid}")
+        logging.debug(f"Added failed job {jid}")
+        succeeded += 1
+    return tried, succeeded
 
 
 async def add_graph_to_seen(r, G):
-    async for id, label, props in G.all_nodes():
+    tried = 0
+    succeeded = 0
+    async for _, label, props in G.all_nodes():
+        tried += 1
+        if tried % LOG_INTERVAL == 0:
+            logging.info(f"{tried} successful jobs seen")
         if "last_fetch_date" not in props:
             logging.warning(f"Unfetched actor: {label}; skipping")
             continue
@@ -74,17 +94,25 @@ async def add_graph_to_seen(r, G):
                 f"Exception adding successful job {jid} to seen: {e}; skipping"
             )
             continue
-        logging.info(f"Added successful job {jid}")
+        logging.debug(f"Added successful job {jid}")
+        succeeded += 1
+    return tried, succeeded
 
 
 async def add_queue_to_seen_and_dedupe(r):
-    async for member, score in r.zscan_iter(QUEUE):
-        _, jobstr = member.decode().split("|", 1)
+    tried = 0
+    succeeded = 0
+    deduped = 0
+    async for member, _ in r.zscan_iter(QUEUE):
+        tried += 1
+        if tried % LOG_INTERVAL == 0:
+            logging.info(f"{tried} queue jobs seen")
         job = None
         try:
+            _, jobstr = member.decode().split("|", 1)
             job = json.loads(jobstr)
         except Exception as e:
-            logging.warning(f"Could not parse queue job {jobstr}: {e}; skipping")
+            logging.warning(f"Could not parse queue job {member}: {e}; skipping")
             continue
         jid = job_id(job)
         if jid is None:
@@ -97,7 +125,7 @@ async def add_queue_to_seen_and_dedupe(r):
             logging.warning(f"Exception adding queue job {jid} to seen: {e}; skipping")
             continue
         if res == 0:
-            logging.info(f"Duplicate job in queue {jid}; removing")
+            logging.debug(f"Duplicate job in queue {jid}; removing")
             try:
                 await r.zrem(QUEUE, member)
             except Exception as e:
@@ -105,16 +133,24 @@ async def add_queue_to_seen_and_dedupe(r):
                     f"Exception removing duplicate job {jid} from queue: {e}; skipping"
                 )
                 continue
+            deduped += 1
         else:
-            logging.info(f"Added queue job {jid}")
+            logging.debug(f"Added queue job {jid}")
+            succeeded += 1
+    return tried, succeeded, deduped
 
 
 async def fixup_seen(r, G):
     await del_seen(r)
-    await add_in_flight_to_seen(r)
-    await add_failed_to_seen(r)
-    await add_graph_to_seen(r, G)
-    await add_queue_to_seen_and_dedupe(r)
+    logging.info("Deleted seen")
+    tried, succeeded = await add_in_flight_to_seen(r)
+    logging.info(f"{succeeded}/{tried} in-flight jobs added")
+    tried, succeeded = await add_failed_to_seen(r)
+    logging.info(f"{succeeded}/{tried} failed jobs added")
+    tried, succeeded = await add_graph_to_seen(r, G)
+    logging.info(f"{succeeded}/{tried} successful jobs added")
+    tried, succeeded, deduped = await add_queue_to_seen_and_dedupe(r)
+    logging.info(f"{succeeded}/{tried} queue jobs added; {deduped} jobs deduped")
 
 
 async def main(redis_url, database_url):
