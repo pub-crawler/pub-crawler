@@ -26,7 +26,7 @@ import json
 from fakeredis import FakeAsyncRedis, FakeServer
 
 from pub_crawler.dispatcher import QUEUE, SEEN, Dispatcher, iso_utc
-from fixup_seen import fixup_seen
+from fixup_seen import add_queue_to_seen_and_dedupe, fixup_seen
 from support import FakeGraph
 
 A = "https://x.example/users/a"
@@ -154,3 +154,28 @@ async def test_is_idempotent_across_two_runs():
     assert await r.scard(SEEN) == seen_after_first == 2
     assert await dis.seen(actor_job(A))
     assert await dis.seen(actor_job(B))
+
+
+async def test_dedupes_across_batch_boundaries():
+    # batch_size=1 makes every member its own flush, so each duplicate is split
+    # across separate batches -- exercising the cross-batch path (SEEN persists
+    # between flushes) and the count partitioning, which the default-batch tests
+    # (everything in one flush) can't reach.
+    third = "https://x.example/users/cc"
+    r = fake_redis()
+    dis = dispatcher(r)
+    await dis.enqueue(actor_job(A, depth=1))
+    await dis.enqueue(actor_job(A, depth=2))  # dup of A
+    await dis.enqueue(actor_job(B, depth=1))
+    await dis.enqueue(actor_job(B, depth=2))  # dup of B
+    await dis.enqueue(actor_job(third))
+    await r.delete(SEEN)  # clear what enqueue() seeded, as fixup_seen's del_seen does
+
+    tried, succeeded, deduped = await add_queue_to_seen_and_dedupe(r, batch_size=1)
+
+    # 5 queued members, 3 distinct ids: 3 kept (added), 2 duplicates removed.
+    assert (tried, succeeded, deduped) == (5, 3, 2)
+    assert await r.zcard(QUEUE) == 3  # one copy per distinct id survives
+    assert await dis.seen(actor_job(A))
+    assert await dis.seen(actor_job(B))
+    assert await dis.seen(actor_job(third))

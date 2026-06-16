@@ -30,6 +30,27 @@ async def batch_sadd(r, batch):
     return count
 
 
+async def batch_sadd_and_zrem(r, batch):
+    if not batch:
+        return 0, 0
+    to_zrem = []
+    async with r.pipeline(transaction=False) as pipe:
+        for _, jid in batch:
+            pipe.sadd(SEEN, jid)
+        results = await pipe.execute()
+        for i in range(len(results)):
+            if results[i] == 0:
+                to_zrem.append(batch[i][0])
+        if len(to_zrem) > 0:
+            for member in to_zrem:
+                pipe.zrem(QUEUE, member)
+            await pipe.execute()
+    count = len(batch) - len(to_zrem)
+    zcount = len(to_zrem)
+    batch.clear()
+    return count, zcount
+
+
 async def add_in_flight_to_seen(r):
     tried = 0
     succeeded = 0
@@ -59,7 +80,7 @@ async def add_in_flight_to_seen(r):
     return tried, succeeded
 
 
-async def add_failed_to_seen(r):
+async def add_failed_to_seen(r, *, batch_size=WRITE_BATCH):
     tried = 0
     succeeded = 0
     batch = []
@@ -78,13 +99,13 @@ async def add_failed_to_seen(r):
             logging.warning(f"Unidentifiable failed job: {key}; skipping")
             continue
         batch.append(jid)
-        if len(batch) >= WRITE_BATCH:
+        if len(batch) >= batch_size:
             succeeded = succeeded + await batch_sadd(r, batch)
     succeeded = succeeded + await batch_sadd(r, batch)
     return tried, succeeded
 
 
-async def add_graph_to_seen(r, G):
+async def add_graph_to_seen(r, G, *, batch_size=WRITE_BATCH):
     tried = 0
     succeeded = 0
     batch = []
@@ -101,16 +122,17 @@ async def add_graph_to_seen(r, G):
             logging.warning(f"Unidentifiable successful job: {job}; skipping")
             continue
         batch.append(jid)
-        if len(batch) >= WRITE_BATCH:
+        if len(batch) >= batch_size:
             succeeded = succeeded + await batch_sadd(r, batch)
     succeeded = succeeded + await batch_sadd(r, batch)
     return tried, succeeded
 
 
-async def add_queue_to_seen_and_dedupe(r):
+async def add_queue_to_seen_and_dedupe(r, *, batch_size=WRITE_BATCH):
     tried = 0
     succeeded = 0
     deduped = 0
+    batch = []
     async for member, _ in r.zscan_iter(QUEUE, count=SCAN_COUNT):
         tried += 1
         if tried % LOG_INTERVAL == 0:
@@ -126,38 +148,29 @@ async def add_queue_to_seen_and_dedupe(r):
         if jid is None:
             logging.warning(f"Unidentifiable queue job: {job}; skipping")
             continue
-        res = None
-        try:
-            res = await r.sadd(SEEN, jid)
-        except Exception as e:
-            logging.warning(f"Exception adding queue job {jid} to seen: {e}; skipping")
-            continue
-        if res == 0:
-            logging.debug(f"Duplicate job in queue {jid}; removing")
-            try:
-                await r.zrem(QUEUE, member)
-            except Exception as e:
-                logging.warning(
-                    f"Exception removing duplicate job {jid} from queue: {e}; skipping"
-                )
-                continue
-            deduped += 1
-        else:
-            logging.debug(f"Added queue job {jid}")
-            succeeded += 1
+        batch.append((member, jid))
+        if len(batch) >= batch_size:
+            sadded, zremmed = await batch_sadd_and_zrem(r, batch)
+            succeeded += sadded
+            deduped += zremmed
+    sadded, zremmed = await batch_sadd_and_zrem(r, batch)
+    succeeded += sadded
+    deduped += zremmed
     return tried, succeeded, deduped
 
 
-async def fixup_seen(r, G):
+async def fixup_seen(r, G, *, batch_size=WRITE_BATCH):
     await del_seen(r)
     logging.info("Deleted seen")
     tried, succeeded = await add_in_flight_to_seen(r)
     logging.info(f"{succeeded}/{tried} in-flight jobs added")
-    tried, succeeded = await add_failed_to_seen(r)
+    tried, succeeded = await add_failed_to_seen(r, batch_size=batch_size)
     logging.info(f"{succeeded}/{tried} failed jobs added")
-    tried, succeeded = await add_graph_to_seen(r, G)
+    tried, succeeded = await add_graph_to_seen(r, G, batch_size=batch_size)
     logging.info(f"{succeeded}/{tried} successful jobs added")
-    tried, succeeded, deduped = await add_queue_to_seen_and_dedupe(r)
+    tried, succeeded, deduped = await add_queue_to_seen_and_dedupe(
+        r, batch_size=batch_size
+    )
     logging.info(f"{succeeded}/{tried} queue jobs added; {deduped} jobs deduped")
 
 
