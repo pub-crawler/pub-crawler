@@ -24,10 +24,10 @@ from crawl import make_dispatcher
 from pub_crawler.crawler import Crawler
 from support import FakeGraph
 
-ACCT = "evan@cosocial.ca"
-ACTOR_ID = "https://cosocial.ca/users/evan"
-FOLLOWERS_URL = "https://cosocial.ca/users/evan/followers"
-FOLLOWING_URL = "https://cosocial.ca/users/evan/following"
+ACCT = "evan@cosocial.example"
+ACTOR_ID = "https://cosocial.example/users/evan"
+FOLLOWERS_URL = "https://cosocial.example/users/evan/followers"
+FOLLOWING_URL = "https://cosocial.example/users/evan/following"
 FOLLOWERS_TOTAL = 1200
 FOLLOWING_TOTAL = 34
 
@@ -48,7 +48,7 @@ def fake_redis():
 def crawl_handler(request):
     """A shallow fediverse: resolve the acct, serve the actor, count-only collections."""
     if request.url.path == "/.well-known/webfinger":
-        resource = request.url.params["resource"]  # acct:evan@cosocial.ca
+        resource = request.url.params["resource"]  # acct:evan@cosocial.example
         return httpx.Response(
             200,
             json={

@@ -13,8 +13,8 @@ import pytest
 from pub_crawler.webfinger_handler import WebfingerHandler
 from support import FakeDispatcher, FakeGraph
 
-ACCT = "evan@cosocial.ca"
-ACTOR_ID = "https://cosocial.ca/users/evan"
+ACCT = "evan@cosocial.example"
+ACTOR_ID = "https://cosocial.example/users/evan"
 
 WF_JOB = {"job_type": "webfinger", "webfinger": ACCT}
 ACTOR_JOB = {"job_type": "actor", "actor_id": ACTOR_ID, "depth": 0}

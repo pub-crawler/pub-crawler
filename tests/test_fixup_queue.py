@@ -36,7 +36,7 @@ async def members_with_scores(r):
 
 async def test_rewrites_old_members_to_ts_pipe_format():
     r = fake_redis()
-    job = {"job_type": "webfinger", "webfinger": "evan@cosocial.ca"}
+    job = {"job_type": "webfinger", "webfinger": "evan@cosocial.example"}
     await r.zadd(QUEUE, {f"7:{job_str(job)}": 1000.0})
 
     migrated = await fixup_queue(r)
@@ -69,7 +69,7 @@ async def test_preserves_fifo_order_of_the_old_counters():
 
 async def test_is_idempotent_and_leaves_new_members_alone():
     r = fake_redis()
-    job = {"job_type": "webfinger", "webfinger": "alice@example.social"}
+    job = {"job_type": "webfinger", "webfinger": "alice@social.example"}
     await r.zadd(QUEUE, {f"3:{job_str(job)}": 200.0})
 
     first = await fixup_queue(r)

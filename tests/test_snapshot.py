@@ -17,8 +17,8 @@ import networkx as nx
 from snapshot import snapshot
 from support import FakeGraph
 
-EVAN = "https://cosocial.ca/users/evan"
-ALICE = "https://example.social/users/alice"
+EVAN = "https://cosocial.example/users/evan"
+ALICE = "https://social.example/users/alice"
 
 
 async def test_writes_nodes_edges_and_props_readable_by_networkx(tmp_path):

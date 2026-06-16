@@ -41,39 +41,39 @@ async def queued_jobs(r):
 
 async def test_enqueues_a_webfinger_job_per_seed(tmp_path):
     seeds = tmp_path / "seeds.txt"
-    seeds.write_text("evan@cosocial.ca\nalice@example.social\n")
+    seeds.write_text("evan@cosocial.example\nalice@social.example\n")
     r = fake_redis()
 
     await add_seeds(str(seeds), r, transport=httpx.MockTransport(no_http))
 
     # FIFO by enqueue order (the counter tiebreaks the equal ~now scores).
     assert await queued_jobs(r) == [
-        {"job_type": "webfinger", "webfinger": "evan@cosocial.ca"},
-        {"job_type": "webfinger", "webfinger": "alice@example.social"},
+        {"job_type": "webfinger", "webfinger": "evan@cosocial.example"},
+        {"job_type": "webfinger", "webfinger": "alice@social.example"},
     ]
 
 
 async def test_skips_blank_and_whitespace_lines(tmp_path):
     seeds = tmp_path / "seeds.txt"
-    seeds.write_text("  evan@cosocial.ca  \n\n\n   \nalice@example.social\n")
+    seeds.write_text("  evan@cosocial.example  \n\n\n   \nalice@social.example\n")
     r = fake_redis()
 
     await add_seeds(str(seeds), r, transport=httpx.MockTransport(no_http))
 
     webfingers = [j["webfinger"] for j in await queued_jobs(r)]
-    assert webfingers == ["evan@cosocial.ca", "alice@example.social"]
+    assert webfingers == ["evan@cosocial.example", "alice@social.example"]
 
 
 async def test_follow_up_seeds_append_to_an_existing_queue(tmp_path):
     # The "initial or follow-up" use: a second run adds to what's already queued.
     first = tmp_path / "first.txt"
-    first.write_text("evan@cosocial.ca\n")
+    first.write_text("evan@cosocial.example\n")
     second = tmp_path / "second.txt"
-    second.write_text("bob@example.social\n")
+    second.write_text("bob@social.example\n")
     r = fake_redis()
 
     await add_seeds(str(first), r, transport=httpx.MockTransport(no_http))
     await add_seeds(str(second), r, transport=httpx.MockTransport(no_http))
 
     webfingers = [j["webfinger"] for j in await queued_jobs(r)]
-    assert set(webfingers) == {"evan@cosocial.ca", "bob@example.social"}
+    assert set(webfingers) == {"evan@cosocial.example", "bob@social.example"}

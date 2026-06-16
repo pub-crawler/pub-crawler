@@ -27,9 +27,9 @@ import pytest
 from pub_crawler.actor_handler import ActorHandler
 from support import FakeDispatcher, FakeGraph
 
-ACTOR_ID = "https://cosocial.ca/users/evan"
-FOLLOWERS_URL = "https://cosocial.ca/users/evan/followers"
-FOLLOWING_URL = "https://cosocial.ca/users/evan/following"
+ACTOR_ID = "https://cosocial.example/users/evan"
+FOLLOWERS_URL = "https://cosocial.example/users/evan/followers"
+FOLLOWING_URL = "https://cosocial.example/users/evan/following"
 ACTOR = {
     "id": ACTOR_ID,
     "type": "Person",
@@ -240,7 +240,7 @@ async def test_omitted_summary_stays_absent():
 # stores nothing for now. The long tail can be revisited later.
 # ---------------------------------------------------------------------------
 
-ICON_URL = "https://cosocial.ca/avatars/evan.png"
+ICON_URL = "https://cosocial.example/avatars/evan.png"
 
 
 async def test_stamps_icon_url_from_an_image_object():
@@ -289,7 +289,7 @@ async def test_omitted_icon_stays_absent():
 # carrying a `url`; every other shape stores nothing.
 # ---------------------------------------------------------------------------
 
-IMAGE_URL = "https://cosocial.ca/headers/evan.png"
+IMAGE_URL = "https://cosocial.example/headers/evan.png"
 
 
 async def test_stamps_image_url_from_an_image_object():
@@ -335,7 +335,7 @@ async def test_omitted_image_stays_absent():
 # stored; Link object / list shapes store nothing (revisit the long tail later).
 # ---------------------------------------------------------------------------
 
-PROFILE_URL = "https://cosocial.ca/@evan"
+PROFILE_URL = "https://cosocial.example/@evan"
 
 
 async def test_stamps_url_from_a_bare_string():
@@ -390,7 +390,7 @@ def property_value(name, value):
 
 
 async def test_packs_property_value_attachments_into_properties():
-    pub = '<a href="https://cosocial.ca/@evan">cosocial.ca/@evan</a>'
+    pub = '<a href="https://cosocial.example/@evan">cosocial.example/@evan</a>'
     work = '<a href="https://social.openearth.org/@evan">social.openearth.org/@evan</a>'
     actor = {
         **DISCOVERABLE_ACTOR,
@@ -552,7 +552,7 @@ async def test_actor_without_discoverable_suppresses_personal_fields(prop):
     [
         ("type", "Person"),
         ("preferred_username", "evan"),
-        ("hostname", "cosocial.ca"),
+        ("hostname", "cosocial.example"),
         ("discoverable", False),
     ],
 )
@@ -574,7 +574,7 @@ async def test_structural_fields_collected_even_when_not_discoverable(prop, expe
 # ONLY when indexable=true; suppressed on an explicit `false` OR when absent.
 # ---------------------------------------------------------------------------
 
-OUTBOX_URL = "https://cosocial.ca/users/evan/outbox"
+OUTBOX_URL = "https://cosocial.example/users/evan/outbox"
 
 
 async def test_stamps_outbox_url_for_an_indexable_actor():
@@ -711,8 +711,8 @@ async def test_derives_hostname_from_the_actor_id():
 
     await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 0))
 
-    # ACTOR_ID == "https://cosocial.ca/users/evan"
-    assert await graph.get_node_property(ACTOR_ID, "hostname") == "cosocial.ca"
+    # ACTOR_ID == "https://cosocial.example/users/evan"
+    assert await graph.get_node_property(ACTOR_ID, "hostname") == "cosocial.example"
 
 
 async def test_hostname_is_lowercased_without_port():
