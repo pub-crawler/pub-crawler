@@ -1,21 +1,55 @@
 import logging
 import asyncio
 from pub_crawler.dispatcher import MAX_INFLIGHT
+from pub_crawler.job_id import job_id
+import random
+
+BASE_SLEEP = 100
+MAX_FAILURES = 20
 
 
-async def worker(name, dispatcher):
+def _sleep_ms(ms):
+    return asyncio.sleep(ms / 1000)
+
+
+async def worker(name, dispatcher, *, rand=random.random, sleep=_sleep_ms):
+    dispatcher_failures = 0
     while True:
-        job = await dispatcher.get()
-        if job is None:
-            break
         try:
-            logging.debug(job)
-            await dispatcher.dispatch(job)
+            job = await dispatcher.get()
+            dispatcher_failures = 0
+            if job is None:
+                logging.debug(f"{name} got None job; quitting")
+                break
+            try:
+                logging.debug(f"{name} dispatching job {job_id(job)}")
+                await dispatcher.dispatch(job)
+            except Exception as e:
+                logging.warning(f"{name} job {job_id(job)} failed: {e}")
+                await dispatcher.fail(job)
+                continue
+            await dispatcher.done(job)
         except Exception as e:
-            logging.warning(e, exc_info=True)
-            await dispatcher.fail(job)
-            continue
-        await dispatcher.done(job)
+            logging.error(
+                f"{name} got dispatcher error {e}"
+            )
+            dispatcher_failures += 1
+            if dispatcher_failures > MAX_FAILURES:
+                logging.error(
+                    f"{name} too many dispatcher failures, quitting"
+                )
+                return
+            else:
+                sleep_time = (
+                    BASE_SLEEP * (2 ** (dispatcher_failures - 1)) * (0.5 + rand())
+                )
+                logging.warning(
+                    f"{name} dispatcher failure #{dispatcher_failures}, sleeping {sleep_time}ms"
+                )
+                await sleep(sleep_time)
+                logging.info(
+                    f"{name} awake again after {sleep_time}ms"
+                )
 
 
 async def reap(dispatcher):
@@ -30,10 +64,6 @@ async def reap_worker(dispatcher, sleep):
         except Exception as e:
             logging.warning(e, exc_info=True)
         await sleep(MAX_INFLIGHT)
-
-
-def _sleep_ms(ms):
-    return asyncio.sleep(ms / 1000)
 
 
 class Crawler:

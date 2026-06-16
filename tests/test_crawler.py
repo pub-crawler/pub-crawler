@@ -2,11 +2,15 @@
 
 worker(name, dispatcher): the per-task drain loop.
   get() a job, dispatch() it, and
-    - on success   -> done(job)            (release the lease, NOT a failure)
-    - on exception -> fail(job), continue  (record it, SKIP done, keep looping)
-    - on None      -> return               (stop sentinel from a stopped dispatcher)
+    - on success         -> done(job)            (release the lease, NOT a failure)
+    - dispatch() raises  -> fail(job), continue  (record it, SKIP done, keep looping)
+    - get() is None      -> return               (stop sentinel from a stopped dispatcher)
   A failed job is never marked done, a succeeded job is never failed, and one
-  job's failure never stops the worker from draining the next.
+  job's failure never stops the worker from draining the next. A raise from the
+  pop/release path (get()/done()) is logged and swallowed with exponential
+  backoff rather than killing the worker; only after too many consecutive such
+  failures does the worker give up. CancelledError (a BaseException) is never
+  swallowed, so finish()/abort() can still cancel workers.
 
 reap(dispatcher): one recovery pass -- re-enqueue every job dispatcher.expired()
   reports as abandoned (enqueue() releases the stale lease and re-queues it).
@@ -27,13 +31,15 @@ Crawler(dispatcher, max_workers):
   The distinction the tests pin: finish() waits for the queue to EMPTY (so nothing
   in flight is cut off), while abort() stops NOW and leaves the backlog behind.
 
-Fakes stand in for the real dispatcher. For the worker loop, ScriptedDispatcher
-hands out a finite job list then raises StopWorker from get() (outside the try,
-so it breaks the otherwise-infinite loop) to end a test deterministically;
-NoneAfterJobs instead returns the None stop sentinel. For the Crawler, the richer
-FakeDispatcher mirrors get()/join()/stop(); stop() is assumed SYNCHRONOUS (sets a
-flag) -- flag if it turns out async. Every await that could hang on an unmet
-contract is bounded by wait_for.
+Fakes stand in for the real dispatcher. For the worker loop: ScriptedDispatcher
+hands out a finite job list then returns the None stop sentinel (and can mark
+chosen jobs' dispatch() as raising, via failing=); ThrowingDispatcher raises from
+get() or done() on scripted calls, to prove the loop's guard swallows those and
+keeps draining; ParkingDispatcher blocks forever in get() so a cancel has
+something to interrupt. For the Crawler, the richer FakeDispatcher mirrors
+get()/join()/stop(); stop() is assumed SYNCHRONOUS (sets a flag) -- flag if it
+turns out async. Every await that could hang on an unmet contract is bounded by
+wait_for.
 """
 
 import asyncio
@@ -63,11 +69,15 @@ async def _until(predicate, timeout=1.0):
 # ---------------------------------------------------------------------------
 
 
-class StopWorker(Exception):
-    """Sentinel raised by a fake get() to end the otherwise-infinite loop."""
+async def _instant_sleep(ms):
+    """No-op sleep injected into worker() so its backoff never actually waits."""
 
 
 class ScriptedDispatcher:
+    """Hands out a finite job list, then returns the None stop sentinel forever.
+    Jobs whose tag is in failing have their dispatch() raise -- exercising the
+    inline fail-and-continue path, which never reaches the loop's outer guard."""
+
     def __init__(self, jobs, failing=()):
         self._jobs = list(jobs)
         self._failing = set(failing)  # tags whose dispatch() raises
@@ -76,9 +86,7 @@ class ScriptedDispatcher:
         self.failed_jobs = []
 
     async def get(self):
-        if not self._jobs:
-            raise StopWorker
-        return self._jobs.pop(0)
+        return self._jobs.pop(0) if self._jobs else None
 
     async def dispatch(self, job):
         self.dispatched.append(job)
@@ -92,34 +100,10 @@ class ScriptedDispatcher:
         self.failed_jobs.append(job)
 
 
-class NoneAfterJobs:
-    """get() hands out the scripted jobs, then returns None forever -- the stop
-    sentinel a stopped dispatcher yields."""
-
-    def __init__(self, jobs=()):
-        self._jobs = list(jobs)
-        self.dispatched = []
-        self.done_jobs = []
-        self.failed_jobs = []
-
-    async def get(self):
-        return self._jobs.pop(0) if self._jobs else None
-
-    async def dispatch(self, job):
-        self.dispatched.append(job)
-
-    async def done(self, job):
-        self.done_jobs.append(job)
-
-    async def fail(self, job):
-        self.failed_jobs.append(job)
-
-
 async def test_worker_marks_a_succeeded_job_done_and_never_fails_it():
     dis = ScriptedDispatcher([job("ok")])
 
-    with pytest.raises(StopWorker):
-        await worker("w-0", dis)
+    await asyncio.wait_for(worker("w-0", dis), timeout=1.0)
 
     assert dis.dispatched == [job("ok")]
     assert dis.done_jobs == [job("ok")]
@@ -129,8 +113,7 @@ async def test_worker_marks_a_succeeded_job_done_and_never_fails_it():
 async def test_worker_fails_a_raised_job_and_never_marks_it_done():
     dis = ScriptedDispatcher([job("bad")], failing=["bad"])
 
-    with pytest.raises(StopWorker):
-        await worker("w-0", dis)
+    await asyncio.wait_for(worker("w-0", dis), timeout=1.0)
 
     assert dis.dispatched == [job("bad")]
     assert dis.failed_jobs == [job("bad")]
@@ -142,8 +125,7 @@ async def test_worker_keeps_draining_after_a_failure():
     # the worker goes on to dispatch and complete the next job.
     dis = ScriptedDispatcher([job("bad"), job("good")], failing=["bad"])
 
-    with pytest.raises(StopWorker):
-        await worker("w-0", dis)
+    await asyncio.wait_for(worker("w-0", dis), timeout=1.0)
 
     assert dis.dispatched == [job("bad"), job("good")]
     assert dis.failed_jobs == [job("bad")]
@@ -155,7 +137,7 @@ async def test_worker_exits_when_get_returns_none():
     # returns the moment get() yields None -- it must NOT dispatch the sentinel.
     # (A worker that ignored None would loop on it forever; wait_for turns that
     # hang into a failure.)
-    dis = NoneAfterJobs([job("a"), job("b")])
+    dis = ScriptedDispatcher([job("a"), job("b")])
 
     await asyncio.wait_for(worker("w-0", dis), timeout=1.0)
 
@@ -163,6 +145,105 @@ async def test_worker_exits_when_get_returns_none():
     assert dis.done_jobs == [job("a"), job("b")]
     assert dis.failed_jobs == []
     assert None not in dis.dispatched
+
+
+class ThrowingDispatcher:
+    """get() and/or done() raise on scripted calls, to prove that a raise from
+    either one does not kill the worker. get() walks a script -- ("raise",) to
+    blow up, ("job", j) to hand out a job, ("stop",) to return the None sentinel
+    -- so the loop still ends deterministically on None even though no exception
+    ends it. done() raises for any job whose tag is in done_failing.
+
+    These pin the post-fix contract: only the None sentinel stops a worker; an
+    exception from get() or done() is logged and swallowed, and the worker goes
+    on to drain the next job. (Whether a job whose done() raised is later handed
+    to fail() is left to the implementation -- not asserted here.)"""
+
+    def __init__(self, script, done_failing=()):
+        self._script = list(script)
+        self._done_failing = set(done_failing)
+        self.get_calls = 0
+        self.dispatched = []
+        self.done_jobs = []
+        self.failed_jobs = []
+
+    async def get(self):
+        self.get_calls += 1
+        if not self._script:
+            return None
+        action = self._script.pop(0)
+        if action[0] == "raise":
+            raise RuntimeError("get() blew up (e.g. bad job_type on the pop path)")
+        if action[0] == "stop":
+            return None
+        return action[1]
+
+    async def dispatch(self, job):
+        self.dispatched.append(job)
+
+    async def done(self, job):
+        if job["tag"] in self._done_failing:
+            raise RuntimeError(f"done() blew up releasing {job['tag']}")
+        self.done_jobs.append(job)
+
+    async def fail(self, job):
+        self.failed_jobs.append(job)
+
+
+async def test_worker_survives_a_raise_from_get():
+    # A raise from get() -- e.g. an unknown job_type or a missing key on the pop
+    # path -- must be logged and swallowed, NOT propagated out of the worker. The
+    # worker tries get() again and drains the job queued behind the raise; the
+    # job's arrival in dispatched is the proof the loop kept going.
+    dis = ThrowingDispatcher([("raise",), ("job", job("a")), ("stop",)])
+
+    await asyncio.wait_for(worker("w-0", dis, sleep=_instant_sleep), timeout=1.0)
+
+    assert dis.dispatched == [job("a")]
+    assert dis.done_jobs == [job("a")]
+
+
+async def test_worker_survives_a_raise_from_done():
+    # done() raising (releasing the lease blew up) must not break the loop: the
+    # worker keeps draining and dispatches the next job. "a" never lands in
+    # done_jobs because its done() raised before recording.
+    dis = ThrowingDispatcher(
+        [("job", job("a")), ("job", job("b")), ("stop",)],
+        done_failing=["a"],
+    )
+
+    await asyncio.wait_for(worker("w-0", dis, sleep=_instant_sleep), timeout=1.0)
+
+    assert dis.dispatched == [job("a"), job("b")]
+    assert dis.done_jobs == [job("b")]
+
+
+class ParkingDispatcher:
+    """get() parks on an unset event forever, so the worker sits live inside its
+    loop with something for a cancel to interrupt. entered_get fires once the
+    worker has reached (and is now blocked in) get()."""
+
+    def __init__(self):
+        self._parked = asyncio.Event()  # never set -> get() blocks forever
+        self.entered_get = asyncio.Event()
+
+    async def get(self):
+        self.entered_get.set()
+        await self._parked.wait()
+
+
+async def test_worker_cancellation_is_not_swallowed_by_the_guard():
+    # The loop-body guard must catch Exception only -- never CancelledError,
+    # which is a BaseException. Cancelling a parked worker has to unwind it:
+    # Crawler.finish()/abort() wind workers down with task.cancel(), so a guard
+    # broadened to except BaseException (or a bare except) would hang them.
+    dis = ParkingDispatcher()
+    task = asyncio.create_task(worker("w-0", dis))
+    await _until(dis.entered_get.is_set)  # worker is now parked inside get()
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
 
 
 # ---------------------------------------------------------------------------
