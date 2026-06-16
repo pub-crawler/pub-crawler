@@ -24,10 +24,10 @@ async def handle_items(graph, dispatcher, items, owner_id, direction, depth):
     not_fetched = ids - last_fetch_dates.keys()
 
     for id in not_fetched:
-        await dispatcher.enqueue(
-            {
-                "job_type": "actor",
-                "actor_id": id,
-                "depth": depth + 1,
-            }
-        )
+        job = {
+            "job_type": "actor",
+            "actor_id": id,
+            "depth": depth + 1,
+        }
+        if not await dispatcher.seen(job):
+            await dispatcher.enqueue(job)

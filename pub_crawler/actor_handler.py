@@ -68,26 +68,26 @@ class ActorHandler(Handler):
                     props["outbox"] = doc["outbox"]
             if "followers" in doc and isinstance(doc["followers"], str):
                 props["followers"] = doc["followers"]
-                await self.dispatcher.enqueue(
-                    {
-                        "job_type": "collection",
-                        "collection_id": doc["followers"],
-                        "owner_id": actor_id,
-                        "direction": "followers",
-                        "depth": depth,
-                    }
-                )
+                job = {
+                    "job_type": "collection",
+                    "collection_id": doc["followers"],
+                    "owner_id": actor_id,
+                    "direction": "followers",
+                    "depth": depth,
+                }
+                if not await self.dispatcher.seen(job):
+                    await self.dispatcher.enqueue(job)
             if "following" in doc and isinstance(doc["following"], str):
                 props["following"] = doc["following"]
-                await self.dispatcher.enqueue(
-                    {
-                        "job_type": "collection",
-                        "collection_id": doc["following"],
-                        "owner_id": actor_id,
-                        "direction": "following",
-                        "depth": depth,
-                    }
-                )
+                job = {
+                    "job_type": "collection",
+                    "collection_id": doc["following"],
+                    "owner_id": actor_id,
+                    "direction": "following",
+                    "depth": depth,
+                }
+                if not await self.dispatcher.seen(job):
+                    await self.dispatcher.enqueue(job)
 
         await self.graph.set_node_properties(actor_id, props)
 

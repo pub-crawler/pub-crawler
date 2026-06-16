@@ -22,7 +22,8 @@ async def add_seeds(input_filename, r, *, transport=None):
                 if not wf:
                     continue
                 job = {"job_type": "webfinger", "webfinger": wf}
-                await dispatcher.enqueue(job)
+                if not await dispatcher.seen(job):
+                    await dispatcher.enqueue(job)
 
     finally:
         await wfc.aclose()

@@ -8,6 +8,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding
 
 from pub_crawler.fixed_window_counter import FixedWindowCounter
+from pub_crawler.job_id import job_id
 
 AS2_CONTEXT = "https://www.w3.org/ns/activitystreams"
 SECURITY_CONTEXT = "https://w3id.org/security/v1"
@@ -107,13 +108,20 @@ class SpyCounter:
 class FakeDispatcher:
     """Records the jobs a handler enqueues, in order — no queue, no next_available
     stamping, no routing (that's the real Dispatcher's job, tested separately).
+    Tracks a `seen` set keyed by job_id, mirroring the real dispatcher, so a
+    handler's `if not seen(job): enqueue(job)` de-dup gate behaves faithfully.
     Handler tests construct FakeDispatcher() and inspect `.enqueued`."""
 
     def __init__(self):
         self.enqueued = []
+        self._seen = set()
 
     async def enqueue(self, job):
         self.enqueued.append(job)
+        self._seen.add(job_id(job))
+
+    async def seen(self, job):
+        return job_id(job) in self._seen
 
 
 # --- DatabaseGraph stand-in for handler unit tests ----------------------------

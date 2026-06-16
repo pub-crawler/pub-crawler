@@ -32,20 +32,22 @@ class PageHandler(Handler):
 
             if "next" in json:
                 next_id = None
-                if isinstance(json.get("next"), dict) and isinstance(json["next"].get("id"), str):
+                if isinstance(json.get("next"), dict) and isinstance(
+                    json["next"].get("id"), str
+                ):
                     next_id = json["next"].get("id")
                 elif isinstance(json.get("next"), str) and json["next"]:
                     next_id = json["next"]
                 if next_id:
-                    await self.dispatcher.enqueue(
-                        {
-                            "job_type": "page",
-                            "page_id": next_id,
-                            "direction": direction,
-                            "owner_id": owner_id,
-                            "depth": depth,
-                        }
-                    )
+                    job = {
+                        "job_type": "page",
+                        "page_id": next_id,
+                        "direction": direction,
+                        "owner_id": owner_id,
+                        "depth": depth,
+                    }
+                    if not await self.dispatcher.seen(job):
+                        await self.dispatcher.enqueue(job)
             else:
                 props[f"{direction}_pages_complete"] = True
 
