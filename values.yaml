@@ -79,6 +79,29 @@ fixupQueue:
       cpu: 250m
       memory: 128Mi
 
+# Seen-set fixup: fixup_seen.py rebuilds the SEEN de-dup set from durable state
+# (in-flight + failed + queued jobs, plus fetched actors in the graph) and dedupes
+# the existing queue. Pre-install/pre-upgrade hook AFTER fixupQueue (it parses the
+# `ts|job` members fixupQueue produces) and BEFORE seeding (hook-weight -6, between
+# -7 and -5). Needs BOTH Redis and Postgres.
+#
+# WARNING — unlike fixupQueue this is NOT a cheap no-op on re-run: it DELETEs SEEN
+# and rebuilds + re-dedupes the entire queue (ZREM-ing duplicates) every time it
+# runs, which on a large queue is minutes of work and re-runs on every upgrade
+# while enabled. Treat it as a one-shot migration: enable it for the deploy that
+# introduces de-dup, then set enabled: false. Must run with the crawler STOPPED
+# (it deletes SEEN and removes queue members) — like fixupQueue, the chart does
+# not enforce this; stop the running crawler Job before upgrading.
+fixupSeen:
+  enabled: true
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 128Mi
+
 # The crawl itself — a run-to-completion Job (re-created each helm revision).
 job:
   backoffLimit: 0
