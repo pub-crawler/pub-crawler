@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-06-17
+
+### Added
+
+- Fixup script to reprioritise the queue based on depth and type.
+
+### Changed
+
+- Dispatcher prioritises the queue by depth and type of the job as well as next-available-execution time.
+
 ## [0.4.1] - 2026-06-16
 
 ### Fixed
@@ -126,7 +136,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Crawler max depth defaults to 1.
 - `DatabaseGraph` no longer uses its own transaction.
 
-[Unreleased]: https://github.com/pub-crawler/pub-crawler/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/pub-crawler/pub-crawler/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/pub-crawler/pub-crawler/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/pub-crawler/pub-crawler/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/pub-crawler/pub-crawler/compare/v0.3.4...v0.4.0
 [0.3.4]: https://github.com/pub-crawler/pub-crawler/compare/v0.3.3...v0.3.4
