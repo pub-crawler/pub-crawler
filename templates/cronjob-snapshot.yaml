@@ -35,7 +35,7 @@ spec:
                 # gzipped can't differ if the clock ticks between evaluations.
                 - |
                   f={{ .Values.persistence.mountPath }}/snapshot-$(date +%F-%H%M%S).gml
-                  python snapshot.py "$f" && gzip "$f"
+                  python bin/snapshot.py "$f" && gzip "$f"
               securityContext:
                 {{- toYaml .Values.securityContext | nindent 16 }}
               env:

@@ -67,10 +67,10 @@ migrations:
 # Queue fixup: fixup_queue.py rewrites legacy `counter:job` queue members into
 # the `ts|job` format. Runs as a pre-install/pre-upgrade hook AFTER migrations
 # and BEFORE seeding (hook-weight -7, between -10 and -5). Idempotent — a no-op
-# once the queue is converted — so it's safe to leave enabled, or disable it
-# once every cluster has been migrated.
+# once the queue is converted. Disabled by default now that the cluster's
+# migrated; `--set fixupQueue.enabled=true` if an unconverted cluster needs it.
 fixupQueue:
-  enabled: true
+  enabled: false
   resources:
     requests:
       cpu: 50m
@@ -88,12 +88,13 @@ fixupQueue:
 # WARNING — unlike fixupQueue this is NOT a cheap no-op on re-run: it DELETEs SEEN
 # and rebuilds + re-dedupes the entire queue (ZREM-ing duplicates) every time it
 # runs, which on a large queue is minutes of work and re-runs on every upgrade
-# while enabled. Treat it as a one-shot migration: enable it for the deploy that
-# introduces de-dup, then set enabled: false. Must run with the crawler STOPPED
-# (it deletes SEEN and removes queue members) — like fixupQueue, the chart does
-# not enforce this; stop the running crawler Job before upgrading.
+# while enabled. So it's DISABLED by default — it's a one-shot migration. Only
+# `--set fixupSeen.enabled=true`, with the crawler STOPPED, to bring de-dup to a
+# cluster that predates it (or to rebuild SEEN if it's ever lost). It deletes SEEN
+# and removes queue members, so — like fixupQueue — the chart can't enforce the
+# crawler-stopped precondition; stop the running crawler Job before upgrading.
 fixupSeen:
-  enabled: true
+  enabled: false
   resources:
     requests:
       cpu: 50m

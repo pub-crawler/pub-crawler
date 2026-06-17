@@ -28,7 +28,7 @@ spec:
         - name: seed
           image: {{ include "pub-crawler.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          command: ["python", "add_seeds.py", "/seeds/seeds.txt"]
+          command: ["python", "bin/add_seeds.py", "/seeds/seeds.txt"]
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           env:

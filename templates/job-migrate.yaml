@@ -28,7 +28,7 @@ spec:
         - name: migrate
           image: {{ include "pub-crawler.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          command: ["python", "run_migrations.py"]
+          command: ["python", "bin/run_migrations.py"]
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           env:

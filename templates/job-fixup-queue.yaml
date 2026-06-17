@@ -28,7 +28,7 @@ spec:
         - name: fixup-queue
           image: {{ include "pub-crawler.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          command: ["python", "fixup_queue.py"]
+          command: ["python", "fixup/fixup_queue.py"]
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           env:

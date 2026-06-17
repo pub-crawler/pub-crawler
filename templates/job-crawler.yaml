@@ -27,7 +27,7 @@ spec:
         - name: crawler
           image: {{ include "pub-crawler.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          # Default image CMD is `python crawl.py`.
+          # Default image CMD is `python bin/crawl.py`.
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           envFrom:

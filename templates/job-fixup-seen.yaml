@@ -29,7 +29,7 @@ spec:
         - name: fixup-seen
           image: {{ include "pub-crawler.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          command: ["python", "fixup_seen.py"]
+          command: ["python", "fixup/fixup_seen.py"]
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           env:
