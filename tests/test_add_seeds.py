@@ -30,11 +30,12 @@ def no_http(request):
 
 
 async def queued_jobs(r):
-    """The jobs currently on the queue ZSET, in score order, parsed back."""
+    """The jobs currently on the queue ZSET, in score order, parsed back.
+    Members are `depth|type|ts|job` (see Dispatcher._job_to_member)."""
     members = await r.zrange(QUEUE, 0, -1)
     jobs = []
     for member in members:
-        _ts, job_json = member.decode().split("|", 1)
+        job_json = member.decode().split("|", 3)[3]
         jobs.append(json.loads(job_json))
     return jobs
 

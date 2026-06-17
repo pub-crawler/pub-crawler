@@ -21,7 +21,7 @@ import asyncio
 import pytest
 from fakeredis import FakeAsyncRedis, FakeServer
 
-from pub_crawler.dispatcher import Dispatcher, MAX_INFLIGHT
+from pub_crawler.dispatcher import Dispatcher, MAX_INFLIGHT, QUEUE
 
 
 def fake_redis():
@@ -641,3 +641,155 @@ async def test_enqueue_raises_on_an_unidentifiable_job():
 
     with pytest.raises(Exception):
         await dis.enqueue({"job_type": "actor", "depth": 1})
+
+
+# ---------------------------------------------------------------------------
+# Queue ordering with depth + job type: get() must hand back jobs ordered by
+#   next_available (soonest) -> depth (shallowest) -> job type
+#   (webfinger < actor < collection < page) -> FIFO (insertion order).
+# Black-box: these assert get() ORDER only, independent of how the keys are
+# encoded (member prefix vs folded into the score).
+#
+# Assumptions to flag if the contract differs:
+#   - depth outranks job type (na -> depth -> type). The mixed case (different
+#     depth AND type at once) is intentionally NOT pinned here pending the
+#     depth-vs-type precedence call -- say the word and I'll add it.
+#   - webfinger jobs carry no `depth`; assumed to sort as depth 0 (so type
+#     precedence lands them first among the shallowest).
+#   - a missing `depth` defaults gracefully (uniform no-depth jobs still order
+#     by na then FIFO -- which is why the existing ordering tests keep passing).
+# ---------------------------------------------------------------------------
+
+
+_ID_FIELD = {
+    "actor": "actor_id",
+    "collection": "collection_id",
+    "page": "page_id",
+    "webfinger": "webfinger",
+}
+
+
+def oj(job_type, tag, *, depth=None, na=0):
+    """A uniquely-identified ordering job carrying na (the score), an optional
+    depth, and a `tag` to assert ordering by."""
+    job = {
+        "job_type": job_type,
+        _ID_FIELD[job_type]: f"https://x.example/{job_type}/{tag}",
+        "na": na,
+        "tag": tag,
+    }
+    if depth is not None:
+        job["depth"] = depth
+    return job
+
+
+def ordering_dispatcher():
+    dis = Dispatcher(fake_redis())
+    for t in ("webfinger", "actor", "collection", "page"):
+        dis.set_handler(t, FakeHandler())
+    return dis
+
+
+async def drain_tags(dis, n):
+    return [(await dis.get())["tag"] for _ in range(n)]
+
+
+async def test_next_available_still_dominates_depth():
+    # depth is a tiebreak, NOT an override: an earlier-available deep job beats
+    # a later-available shallow one.
+    dis = ordering_dispatcher()
+    await dis.enqueue(oj("actor", "early-d3", depth=3, na=100))
+    await dis.enqueue(oj("actor", "late-d0", depth=0, na=200))
+
+    assert await drain_tags(dis, 2) == ["early-d3", "late-d0"]
+
+
+async def test_same_availability_orders_shallower_depth_first():
+    dis = ordering_dispatcher()
+    await dis.enqueue(oj("actor", "d2", depth=2, na=100))
+    await dis.enqueue(oj("actor", "d0", depth=0, na=100))
+
+    assert await drain_tags(dis, 2) == ["d0", "d2"]
+
+
+async def test_same_depth_orders_by_job_type():
+    # webfinger < actor < collection < page (here: actor/collection/page at one depth)
+    dis = ordering_dispatcher()
+    await dis.enqueue(oj("page", "pg", depth=1, na=100))
+    await dis.enqueue(oj("collection", "co", depth=1, na=100))
+    await dis.enqueue(oj("actor", "ac", depth=1, na=100))
+
+    assert await drain_tags(dis, 3) == ["ac", "co", "pg"]
+
+
+async def test_webfinger_sorts_ahead_of_a_same_availability_actor():
+    # webfinger has the highest type precedence (and no depth -> assumed depth 0).
+    dis = ordering_dispatcher()
+    await dis.enqueue(oj("actor", "ac", depth=0, na=100))
+    await dis.enqueue(oj("webfinger", "wf", na=100))
+
+    assert await drain_tags(dis, 2) == ["wf", "ac"]
+
+
+async def test_full_tie_falls_back_to_fifo():
+    # same na, depth, and type -> insertion order preserved.
+    dis = ordering_dispatcher()
+    await dis.enqueue(oj("actor", "first", depth=1, na=100))
+    await dis.enqueue(oj("actor", "second", depth=1, na=100))
+
+    assert await drain_tags(dis, 2) == ["first", "second"]
+
+
+async def test_depth_orders_numerically_not_lexicographically():
+    # the padding trap: depth 10 must NOT sort before depth 2.
+    dis = ordering_dispatcher()
+    await dis.enqueue(oj("actor", "d10", depth=10, na=100))
+    await dis.enqueue(oj("actor", "d2", depth=2, na=100))
+
+    assert await drain_tags(dis, 2) == ["d2", "d10"]
+
+
+# ---------------------------------------------------------------------------
+# Deferral re-queue: a job popped while due, but which the handler now defers to
+# the future (rate-limited), must be re-queued at the NEW score -- not its old
+# one. With the stale score it would be the queue minimum again immediately and
+# get() would spin forever.
+# ---------------------------------------------------------------------------
+
+
+class ScriptedNAHandler:
+    """next_available walks a per-tag script (one pop per call, then sticks on
+    the last value) -- so a job can report a different availability at enqueue
+    vs. the get() recompute, which is what triggers the defer branch."""
+
+    def __init__(self, scripts):
+        self._scripts = {tag: list(seq) for tag, seq in scripts.items()}
+
+    def next_available(self, job):
+        seq = self._scripts[job["tag"]]
+        return seq.pop(0) if len(seq) > 1 else seq[0]
+
+    async def handle(self, job):
+        pass
+
+
+async def test_deferred_job_is_requeued_at_the_new_availability():
+    # `defer`: stored at na=50 (<= now), but the recompute reports na=200 (> now),
+    # so get() must re-queue it at 200. `ready`: stays at 60 (<= now) and is the
+    # one returned. If the re-queue used the stale 50, `defer` would be the min
+    # again and get() would loop forever -- wait_for turns that into a failure.
+    clock = Clock(100)
+    dis = Dispatcher(fake_redis(), now=clock)
+    dis.set_handler("actor", ScriptedNAHandler({"defer": [50, 200], "ready": [60]}))
+
+    await dis.enqueue(oj("actor", "defer"))
+    await dis.enqueue(oj("actor", "ready"))
+
+    got = await asyncio.wait_for(dis.get(), timeout=1.0)
+    assert got["tag"] == "ready"  # the deferred job was put back, not handed out
+
+    remaining = await dis.redis.zrange(QUEUE, 0, -1, withscores=True)
+    assert len(remaining) == 1
+    member, score = remaining[0]
+    assert dis._member_to_job(member)["tag"] == "defer"
+    assert score == 200  # re-scored to the new availability, NOT the stale 50

@@ -1,6 +1,7 @@
 import time
 import json
 import asyncio
+import math
 from datetime import datetime, timezone
 from pub_crawler.job_id import job_id
 
@@ -50,11 +51,9 @@ class Dispatcher:
         if id is None:
             raise Exception(f"Unidentifiable job {self._job_to_str(job)}")
         await self._remove_inflight(job)
-        handler = self._get_handler(job)
-        next_available = handler.next_available(job)
-        ts = iso_utc(self.now())
-        member = f"{ts}|{self._job_to_str(job)}"
-        await self.redis.zadd(QUEUE, {member: next_available})
+        score = self._job_to_score(job)
+        member = self._job_to_member(job)
+        await self.redis.zadd(QUEUE, {member: score})
         await self.redis.sadd(SEEN, id)
 
     async def get(self):
@@ -62,9 +61,9 @@ class Dispatcher:
             popped = await self.redis.bzpopmin(QUEUE)
             if not popped:
                 raise Exception("Empty queue")
-            key, member, next_available = popped
-            _, job_json = member.decode().split("|", 1)
-            job = json.loads(job_json)
+            _, member, score = popped
+            job = self._member_to_job(member)
+            next_available = self._score_to_na(score)
             if next_available > self.now():
                 await self._add_inflight(job)
                 return job
@@ -74,7 +73,8 @@ class Dispatcher:
                 await self._add_inflight(job)
                 return job
             else:
-                await self.redis.zadd(QUEUE, {member: next_available})
+                score = self._job_to_score(job, next_available=next_available)
+                await self.redis.zadd(QUEUE, {member: score})
         return None
 
     async def done(self, job):
@@ -141,3 +141,34 @@ class Dispatcher:
 
     def _str_to_job(self, string):
         return json.loads(string)
+
+    def _job_to_score(self, job, next_available=None):
+        if next_available is None:
+            handler = self._get_handler(job)
+            next_available = handler.next_available(job)
+        return math.floor(next_available)
+
+    def _score_to_na(self, score):
+        return score
+
+    def _job_to_member(self, job):
+        depth = job.get("depth", 0)
+        job_type = job.get("job_type")
+        if job_type == "webfinger":
+            job_type_code = 10
+        elif job_type == "actor":
+            job_type_code = 20
+        elif job_type == "collection":
+            job_type_code = 30
+        elif job_type == "page":
+            job_type_code = 40
+        else:
+            raise Exception(f"unrecognized job type {job_type}")
+        ts = iso_utc(self.now())
+        depth = max(min(depth, 99), 0)
+        job_type_code = max(min(job_type_code, 99), 0)
+        return f"{depth:02d}|{job_type_code:02d}|{ts}|{self._job_to_str(job)}"
+
+    def _member_to_job(self, member):
+        _, _, _, job = member.decode().split("|", 3)
+        return self._str_to_job(job)
