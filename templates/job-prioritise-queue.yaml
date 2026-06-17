@@ -1,0 +1,55 @@
+{{- if .Values.prioritiseQueue.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "pub-crawler.fullname" . }}-prioritise-queue
+  labels:
+    {{- include "pub-crawler.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    # Rewrites `ts|job` queue members to `depth|type|ts|job` so the new
+    # dispatcher can read/sort them. Runs after the other format steps and
+    # seeding (which already emit new-format members), last before the crawler.
+    "helm.sh/hook-weight": "-4"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: {{ .Values.job.backoffLimit }}
+  template:
+    metadata:
+      labels:
+        {{- include "pub-crawler.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: prioritise-queue
+    spec:
+      restartPolicy: Never
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: prioritise-queue
+          image: {{ include "pub-crawler.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["python", "fixup/prioritise_queue_by_depth_and_job_type.py"]
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          env:
+            {{- include "pub-crawler.redisEnv" . | nindent 12 }}
+          {{- with .Values.prioritiseQueue.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

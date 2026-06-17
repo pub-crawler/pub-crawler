@@ -103,6 +103,24 @@ fixupSeen:
       cpu: 250m
       memory: 128Mi
 
+# Queue priority migration: prioritise_queue_by_depth_and_job_type.py rewrites
+# existing `ts|job` queue members into the `depth|type|ts|job` form the new
+# dispatcher sorts on (shallower depth and earlier job types first). Pre-upgrade
+# hook at weight -4 (after the other fixups/seeding, last before the crawler).
+# Redis-only; idempotent (already-converted members are skipped). DISABLED by
+# default -- it's a one-shot for the depth/type-sorting upgrade. `--set
+# prioritiseQueue.enabled=true`, with the crawler STOPPED (it rewrites queue
+# members in place), on the deploy that introduces the new sort.
+prioritiseQueue:
+  enabled: false
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 128Mi
+
 # The crawl itself — a run-to-completion Job (re-created each helm revision).
 job:
   backoffLimit: 0
