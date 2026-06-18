@@ -108,3 +108,53 @@ async def test_empty_graph_is_valid_gml(tmp_path):
     read = nx.read_gml(str(out))
     assert read.number_of_nodes() == 0
     assert read.number_of_edges() == 0
+
+
+class RacyGraph(FakeGraph):
+    """A FakeGraph whose edge pass yields endpoints the node pass never did.
+
+    snapshot writes every `node` stanza first, then every `edge` stanza. With the
+    crawler running, nodes are inserted between those two passes, so all_edges can
+    surface an edge whose source/target id has no `node` stanza. add_dangling_edge
+    injects exactly that: an edge to/from an id all_nodes never yields."""
+
+    def __init__(self):
+        super().__init__()
+        self._dangling = []  # (from_id, to_id, props) with no node stanza
+
+    def add_dangling_edge(self, from_id, to_id, props=None):
+        self._dangling.append((from_id, to_id, props or {}))
+
+    async def all_edges(self):
+        async for edge in super().all_edges():
+            yield edge
+        for edge in self._dangling:
+            yield edge
+
+
+async def test_skips_edges_whose_endpoint_has_no_node_stanza(tmp_path):
+    # The race: the crawler adds nodes (ids never emitted in the node pass) and
+    # edges to/from them during snapshot's edge pass. An edge referencing an
+    # undeclared node id makes nx.read_gml reject the WHOLE file, so those edges
+    # must be skipped -- keeping only edges whose both endpoints got a stanza.
+    #
+    # The dangling ids sit just ABOVE the highest emitted id (ids auto-increment
+    # and nodes are never deleted, so a later node always gets a higher id). The
+    # surviving edge points AT the node holding that highest id (ALICE), so an
+    # off-by-one in the cutoff (>= vs >) would wrongly drop it and fail here.
+    g = RacyGraph()
+    await g.ensure_node(EVAN)
+    await g.ensure_node(ALICE)  # ALICE gets the highest id of the declared nodes
+    await g.ensure_edge(EVAN, ALICE)  # both endpoints declared -> survives
+    await g.set_edge_property(EVAN, ALICE, "direction", "followers")
+    max_id = g._ids[ALICE]
+    g.add_dangling_edge(g._ids[EVAN], max_id + 1)  # target added after node pass
+    g.add_dangling_edge(max_id + 2, g._ids[ALICE])  # source added after node pass
+    out = tmp_path / "graph.gml"
+
+    await snapshot(g, str(out))
+
+    read = nx.read_gml(str(out))  # RAISES if a dangling edge slipped through
+    assert set(read.nodes) == {EVAN, ALICE}
+    assert read.number_of_edges() == 1  # only the fully-declared edge remains
+    assert read.edges[EVAN, ALICE]["direction"] == "followers"

@@ -23,8 +23,10 @@ async def snapshot(G, output_filename):
     with open(output_filename, "w") as f:
         f.write("graph [\n")
         f.write("  directed 1\n")
+        max_id = -1
 
         async for id, label, props in G.all_nodes():
+            max_id = max(id, max_id)
             f.write("  node [\n")
             f.write(f"    id {id}\n")
             f.write(f'    label "{_escape(label)}"\n')
@@ -38,6 +40,9 @@ async def snapshot(G, output_filename):
             f.write("  ]\n")
 
         async for from_node, to_node, props in G.all_edges():
+            # skip edges to nodes that were added while we were iterating
+            if from_node > max_id or to_node > max_id:
+                continue
             f.write("  edge [\n")
             f.write(f"    source {from_node}\n")
             f.write(f"    target {to_node}\n")
