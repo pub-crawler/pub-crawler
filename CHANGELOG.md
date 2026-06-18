@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-06-18
+
+### Fixed
+
+- Snapshot script doesn't emit edge stanzas for unmatched node stanzas. This can be
+  a problem if the crawl is happening while the snapshot is being taken.
+
 ## [0.5.0] - 2026-06-17
 
 ### Added
@@ -136,7 +143,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Crawler max depth defaults to 1.
 - `DatabaseGraph` no longer uses its own transaction.
 
-[Unreleased]: https://github.com/pub-crawler/pub-crawler/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/pub-crawler/pub-crawler/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/pub-crawler/pub-crawler/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/pub-crawler/pub-crawler/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/pub-crawler/pub-crawler/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/pub-crawler/pub-crawler/compare/v0.3.4...v0.4.0
