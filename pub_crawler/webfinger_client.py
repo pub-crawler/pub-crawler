@@ -6,6 +6,7 @@ MEDIA_TYPES = [
     "application/activity+json",
     'application/ld+json; profile="https://www.w3.org/ns/activitystreams"',
 ]
+DEFAULT_KEEPALIVE_EXPIRY = 10  # Burst window
 
 
 class WebfingerClient:
@@ -14,7 +15,9 @@ class WebfingerClient:
         self.burst = burst
         if transport is None:
             limits = httpx.Limits(
-                max_connections=max_workers, max_keepalive_connections=max_workers
+                max_connections=max_workers,
+                max_keepalive_connections=max_workers,
+                keepalive_expiry=DEFAULT_KEEPALIVE_EXPIRY,
             )
             transport = httpx.AsyncHTTPTransport(http2=True, retries=3, limits=limits)
         self.client = httpx.AsyncClient(transport=transport)
