@@ -1,4 +1,4 @@
-import json
+import orjson
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -130,7 +130,7 @@ class DatabaseGraph:
             """,
                 id,
                 name,
-                json.dumps(value),
+                orjson.dumps(value).decode(),
             )
 
     async def set_nodes_property(
@@ -149,7 +149,7 @@ class DatabaseGraph:
                 """,
                 labels,
                 name,
-                json.dumps(value),
+                orjson.dumps(value).decode(),
             )
 
     async def set_node_properties(self, label: str, properties: dict[str, Any]) -> None:
@@ -164,7 +164,7 @@ class DatabaseGraph:
                 SET value = EXCLUDED.value, updated_at = CURRENT_TIMESTAMP
                 """,
                 label,
-                json.dumps(properties),
+                orjson.dumps(properties).decode(),
             )
 
     async def set_edge_property(
@@ -184,7 +184,7 @@ class DatabaseGraph:
                 from_node,
                 to_node,
                 name,
-                json.dumps(value),
+                orjson.dumps(value).decode(),
             )
 
     async def set_edge_properties(
@@ -203,7 +203,7 @@ class DatabaseGraph:
                 """,
                 from_label,
                 to_label,
-                json.dumps(properties),
+                orjson.dumps(properties).decode(),
             )
 
     async def set_from_edges_property(
@@ -223,7 +223,7 @@ class DatabaseGraph:
                 from_label,
                 to_labels,
                 name,
-                json.dumps(value),
+                orjson.dumps(value).decode(),
             )
 
     async def set_to_edges_property(
@@ -243,7 +243,7 @@ class DatabaseGraph:
                 from_labels,
                 to_label,
                 name,
-                json.dumps(value),
+                orjson.dumps(value).decode(),
             )
 
     async def get_node_property(self, label: str, name: str) -> Any:
@@ -259,7 +259,7 @@ class DatabaseGraph:
             if value is None:
                 return None
             else:
-                return json.loads(value)
+                return orjson.loads(value)
 
     async def get_nodes_property(self, labels: list[str], name: str) -> dict[str, Any]:
         async with self._pool.acquire() as conn:
@@ -275,7 +275,7 @@ class DatabaseGraph:
             )
             props = {}
             for row in rows:
-                props[row["label"]] = json.loads(row["value"])
+                props[row["label"]] = orjson.loads(row["value"])
             return props
 
     async def get_edge_property(self, from_label: str, to_label: str, name: str) -> Any:
@@ -296,7 +296,7 @@ class DatabaseGraph:
             if value is None:
                 return None
             else:
-                return json.loads(value)
+                return orjson.loads(value)
 
     async def get_node_properties(self, label: str) -> dict[str, Any]:
         async with self._pool.acquire() as conn:
@@ -310,7 +310,7 @@ class DatabaseGraph:
             )
             props = {}
             for row in rows:
-                props[row["name"]] = json.loads(row["value"])
+                props[row["name"]] = orjson.loads(row["value"])
             return props
 
     async def get_edge_properties(
@@ -330,7 +330,7 @@ class DatabaseGraph:
             )
             props = {}
             for row in rows:
-                props[row["name"]] = json.loads(row["value"])
+                props[row["name"]] = orjson.loads(row["value"])
             return props
 
     async def get_from_edges_property(
@@ -353,7 +353,7 @@ class DatabaseGraph:
             )
             props = {}
             for row in rows:
-                props[row["label"]] = json.loads(row["value"])
+                props[row["label"]] = orjson.loads(row["value"])
             return props
 
     async def get_to_edges_property(
@@ -376,7 +376,7 @@ class DatabaseGraph:
             )
             props = {}
             for row in rows:
-                props[row["label"]] = json.loads(row["value"])
+                props[row["label"]] = orjson.loads(row["value"])
             return props
 
     async def all_nodes(self) -> AsyncIterator[tuple[int, str, dict[str, Any]]]:
@@ -393,7 +393,7 @@ class DatabaseGraph:
                 GROUP BY n.id
                 """
                 async for row in conn.cursor(sql):
-                    yield row["id"], row["label"], json.loads(row["props"])
+                    yield row["id"], row["label"], orjson.loads(row["props"])
 
     async def all_edges(self) -> AsyncIterator[tuple[int, int, dict[str, Any]]]:
         async with self._pool.acquire() as conn:
@@ -410,7 +410,7 @@ class DatabaseGraph:
                 GROUP BY e.from_node, e.to_node
                 """
                 async for row in conn.cursor(sql):
-                    yield row["from_node"], row["to_node"], json.loads(row["props"])
+                    yield row["from_node"], row["to_node"], orjson.loads(row["props"])
 
     async def _node_id(self, conn, label: str) -> int | None:
         if label in self._cache:

@@ -2,6 +2,7 @@ from pub_crawler.signature import signature_header
 import httpx
 from email.utils import formatdate
 from urllib.parse import urlsplit, urljoin, parse_qs
+import orjson
 
 MAX_RECURSIONS = 20
 ACCEPT = (
@@ -95,4 +96,5 @@ class ActivityPubClient:
         base_type = content_type.split(";", 1)[0]
         if not base_type.endswith("+json") and base_type != "application/json":
             raise ValueError(f"Non-JSON content type: {content_type}")
-        return response.json(), response.headers
+        doc = orjson.loads(response.content)
+        return doc, response.headers

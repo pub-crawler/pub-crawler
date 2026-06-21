@@ -2,7 +2,7 @@ from pub_crawler.handler import Handler
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 import httpx
-import json
+import orjson
 
 
 class ActorHandler(Handler):
@@ -117,7 +117,7 @@ class ActorHandler(Handler):
                 if op is not None:
                     other_props.append(op)
         if len(other_props) > 0:
-            props["properties"] = json.dumps(other_props)
+            props["properties"] = orjson.dumps(other_props).decode()
 
     def _get_other_prop(self, obj):
         if (
@@ -140,4 +140,4 @@ class ActorHandler(Handler):
                 if isinstance(uri, str):
                     akas.append(uri)
         if len(akas) > 0:
-            props["also_known_as"] = json.dumps(akas)
+            props["also_known_as"] = orjson.dumps(akas).decode()

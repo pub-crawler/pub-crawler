@@ -1,6 +1,7 @@
 import httpx
 from email.utils import formatdate
 from urllib.parse import urlsplit
+import orjson
 
 MEDIA_TYPES = [
     "application/activity+json",
@@ -35,7 +36,7 @@ class WebfingerClient:
         await self.burst.acquire(origin)
         res = await self.client.get(url, headers=headers)
         res.raise_for_status()
-        doc = res.json()
+        doc = orjson.loads(res.content)
         if doc["subject"] != resource:
             raise Exception(
                 f"Webfinger subject {doc["subject"]} does not match {resource}"

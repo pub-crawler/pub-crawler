@@ -1,9 +1,9 @@
 import time
-import json
 import asyncio
 import math
 from datetime import datetime, timezone
 from pub_crawler.job_id import job_id
+import orjson
 
 
 def _epoch_ms():
@@ -138,10 +138,10 @@ class Dispatcher:
         return await self.redis.hlen(INFLIGHT)
 
     def _job_to_str(self, job):
-        return json.dumps(job, sort_keys=True)
+        return orjson.dumps(job, option=orjson.OPT_SORT_KEYS).decode()
 
     def _str_to_job(self, string):
-        return json.loads(string)
+        return orjson.loads(string)
 
     def _job_to_score(self, job, next_available=None):
         if next_available is None:

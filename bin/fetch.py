@@ -35,9 +35,9 @@ async def fetch(id, *, transport=None, private_key_pem=None):
 
 if __name__ == "__main__":
     import sys
-    import json
+    import orjson
 
     uvloop.install()
 
     arg = sys.argv[1]
-    print(json.dumps(asyncio.run(fetch(arg)), indent=2))
+    print(orjson.dumps(asyncio.run(fetch(arg)), option=orjson.OPT_INDENT_2).decode())
