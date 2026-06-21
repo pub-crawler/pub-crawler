@@ -169,6 +169,21 @@ async def test_acquires_burst_and_general_before_fetching():
 
 
 # ---------------------------------------------------------------------------
+# Constructor accepts max_workers (used to size the connection pool)
+# ---------------------------------------------------------------------------
+
+
+async def test_constructor_accepts_max_workers():
+    client = WebfingerClient(
+        nonblocking_counter(),
+        nonblocking_counter(),
+        transport=httpx.MockTransport(serve([AP_SELF])),
+        max_workers=12,
+    )
+    assert await client.get_actor_id("bot@crawler.pub") == ACTOR_URL
+
+
+# ---------------------------------------------------------------------------
 # next_available(webfinger): when the host's general budget next allows a lookup
 # ---------------------------------------------------------------------------
 

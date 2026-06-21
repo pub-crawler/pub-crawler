@@ -9,11 +9,14 @@ MEDIA_TYPES = [
 
 
 class WebfingerClient:
-    def __init__(self, general, burst, transport=None):
+    def __init__(self, general, burst, transport=None, max_workers=50):
         self.general = general
         self.burst = burst
         if transport is None:
-            transport = httpx.AsyncHTTPTransport(retries=3)
+            limits = httpx.Limits(
+                max_connections=max_workers, max_keepalive_connections=max_workers
+            )
+            transport = httpx.AsyncHTTPTransport(retries=3, limits=limits)
         self.client = httpx.AsyncClient(transport=transport)
 
     async def get_actor_id(self, wf):

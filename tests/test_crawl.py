@@ -94,6 +94,7 @@ async def test_crawl_builds_the_graph_from_a_seed(keypair):
         graph,
         transport=httpx.MockTransport(crawl_handler),
         private_key_pem_data=pem,
+        max_workers=4,
     )
 
     # Seed one webfinger and let the crawl run to completion.

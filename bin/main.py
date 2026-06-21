@@ -49,6 +49,7 @@ async def main(
             key_id=key_id,
             private_key_pem_data=private_key_pem_data,
             max_depth=max_depth,
+            max_workers=max_workers
         )
         crawler = Crawler(dispatcher, max_workers)
         await crawler.start()

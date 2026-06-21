@@ -30,11 +30,12 @@ def make_dispatcher(
     key_id=DEFAULT_KEY_ID,
     private_key_pem_data,
     max_depth=DEFAULT_MAX_DEPTH,
+    max_workers=DEFAULT_MAX_WORKERS
 ):
     general = FixedWindowCounter(300, 5 * 60 * 1000)
     paged = FixedWindowCounter(300, 15 * 60 * 1000)
     burst = FixedWindowCounter(10, 10 * 1000)
-    wfc = WebfingerClient(general, burst, transport=transport)
+    wfc = WebfingerClient(general, burst, transport=transport, max_workers=max_workers)
     ac = ActivityPubClient(
         key_id, private_key_pem_data, general, paged, burst, transport=transport
     )
@@ -75,6 +76,7 @@ async def main(
             key_id=key_id,
             private_key_pem_data=private_key_pem_data,
             max_depth=max_depth,
+            max_workers=max_workers
         )
         crawler = Crawler(dispatcher, max_workers)
         await crawler.start()
