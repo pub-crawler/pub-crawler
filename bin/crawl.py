@@ -67,7 +67,11 @@ async def main(
     private_key_pem_data = Path(private_key_pem_filename).read_text()
 
     r = redis.asyncio.Redis.from_url(redis_url)
-    pool = await asyncpg.create_pool(database_url)
+    pool = await asyncpg.create_pool(
+        database_url,
+        max_size=max_workers,
+        min_size=min(max_workers, 10)
+        )
     async with pool.acquire() as conn:
         await database_setup(conn)
     G = DatabaseGraph(pool)
