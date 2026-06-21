@@ -119,10 +119,11 @@ if __name__ == "__main__":
     uvloop.install()
 
     logging.basicConfig(
-        level=logging.DEBUG,
+        level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
-    logging.getLogger("httpcore").setLevel(logging.INFO)
+    for name in ("hpack", "h2", "httpcore", "httpx"):
+        logging.getLogger(name).setLevel(logging.WARNING)
 
     parser = argparse.ArgumentParser(
         description="Crawl the Fediverse follower/following graph."

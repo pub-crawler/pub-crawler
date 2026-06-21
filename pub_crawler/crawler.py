@@ -19,10 +19,10 @@ async def worker(name, dispatcher, *, rand=random.random, sleep=_sleep_ms):
             job = await dispatcher.get()
             dispatcher_failures = 0
             if job is None:
-                logging.debug(f"{name} got None job; quitting")
+                logging.info(f"{name} got None job; quitting")
                 break
             try:
-                logging.debug(f"{name} dispatching job {job_id(job)}")
+                logging.info(f"{name} dispatching job {job_id(job)}")
                 await dispatcher.dispatch(job)
             except Exception as e:
                 logging.warning(f"{name} job {job_id(job)} failed: {e}")
