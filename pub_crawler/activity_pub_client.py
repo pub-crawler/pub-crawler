@@ -7,18 +7,34 @@ MAX_RECURSIONS = 20
 ACCEPT = (
     "application/activity+json;q=1.0,application/ld+json;q=0.8,application/json;q=0.5"
 )
+DEFAULT_MAX_WORKERS = 50
+DEFAULT_KEEPALIVE_EXPIRY = 10  # Burst window
 
 
 class ActivityPubClient:
 
-    def __init__(self, key_id, private_key_pem, general, paged, burst, transport=None):
+    def __init__(
+        self,
+        key_id,
+        private_key_pem,
+        general,
+        paged,
+        burst,
+        transport=None,
+        max_workers=DEFAULT_MAX_WORKERS,
+    ):
         self.key_id = key_id
         self.private_key_pem = private_key_pem
         self.general = general
         self.paged = paged
         self.burst = burst
         if transport is None:
-            transport = httpx.AsyncHTTPTransport(retries=3)
+            limits = httpx.Limits(
+                max_connections=max_workers,
+                max_keepalive_connections=max_workers,
+                keepalive_expiry=DEFAULT_KEEPALIVE_EXPIRY,
+            )
+            transport = httpx.AsyncHTTPTransport(retries=3, limits=limits)
         self.client = httpx.AsyncClient(transport=transport)
 
     async def get(self, url):
@@ -77,7 +93,6 @@ class ActivityPubClient:
         if not content_type:
             raise ValueError("No content-type")
         base_type = content_type.split(";", 1)[0]
-        if (not base_type.endswith("+json") and
-             base_type != "application/json"):
+        if not base_type.endswith("+json") and base_type != "application/json":
             raise ValueError(f"Non-JSON content type: {content_type}")
         return response.json(), response.headers

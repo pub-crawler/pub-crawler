@@ -106,6 +106,30 @@ async def test_get_sends_a_valid_signature(keypair):
 
 
 # ---------------------------------------------------------------------------
+# Constructor accepts max_workers (used to size the connection pool)
+# ---------------------------------------------------------------------------
+
+
+async def test_constructor_accepts_max_workers(keypair):
+    pem, _ = keypair
+    body = {"id": URL, "type": "Person"}
+
+    def handler(request):
+        return httpx.Response(200, json=body)
+
+    client = ActivityPubClient(
+        KEY_ID,
+        pem,
+        nonblocking_counter(),
+        nonblocking_counter(),
+        nonblocking_counter(),
+        transport=httpx.MockTransport(handler),
+        max_workers=12,
+    )
+    assert await client.get(URL) == body
+
+
+# ---------------------------------------------------------------------------
 # get_with_headers: parsed body PLUS the response headers (get() is this,
 # minus the headers). Used to read the Server header for node metadata.
 # ---------------------------------------------------------------------------
