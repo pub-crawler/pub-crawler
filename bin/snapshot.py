@@ -2,7 +2,7 @@ import logging
 from pub_crawler.database_graph import DatabaseGraph
 import asyncio
 import asyncpg
-
+import uvloop
 
 def _escape(s):
     out = []
@@ -69,6 +69,8 @@ async def main(database_url, output_filename):
 if __name__ == "__main__":
     import os
     import sys
+
+    uvloop.install()
 
     logging.basicConfig(
         level=logging.DEBUG,

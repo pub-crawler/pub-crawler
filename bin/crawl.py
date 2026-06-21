@@ -11,6 +11,7 @@ from pub_crawler.database import database_setup
 from pub_crawler.database_graph import DatabaseGraph
 from pub_crawler.crawler import Crawler
 import asyncio
+import uvloop
 import redis.asyncio
 import asyncpg
 import signal
@@ -104,6 +105,8 @@ if __name__ == "__main__":
     import sys
     import argparse
     import logging
+
+    uvloop.install()
 
     logging.basicConfig(
         level=logging.DEBUG,

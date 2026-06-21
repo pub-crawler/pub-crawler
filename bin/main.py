@@ -16,6 +16,7 @@ from crawl import (
 from add_seeds import add_seeds
 from snapshot import snapshot
 import signal
+import uvloop
 
 
 async def main(
@@ -79,6 +80,8 @@ if __name__ == "__main__":
     import sys
     import os
     import argparse
+
+    uvloop.install()
 
     logging.basicConfig(
         level=logging.DEBUG,

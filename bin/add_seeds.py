@@ -1,6 +1,7 @@
 import logging
 import redis.asyncio
 import asyncio
+import uvloop
 from pub_crawler.dispatcher import Dispatcher
 from pub_crawler.webfinger_client import WebfingerClient
 from pub_crawler.webfinger_handler import WebfingerHandler
@@ -33,6 +34,8 @@ if __name__ == "__main__":
     import os
     import sys
 
+    uvloop.install()
+    
     logging.basicConfig(
         level=logging.DEBUG,
         format="%(asctime)s %(levelname)s %(name)s %(message)s",

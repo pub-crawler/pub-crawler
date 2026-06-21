@@ -3,6 +3,7 @@ from pub_crawler.webfinger_client import WebfingerClient
 from pub_crawler.activity_pub_client import ActivityPubClient
 from pub_crawler.fixed_window_counter import FixedWindowCounter
 import asyncio
+import uvloop
 
 KEY_ID = "https://crawler.pub/actor#main-key"
 
@@ -35,6 +36,8 @@ async def fetch(id, *, transport=None, private_key_pem=None):
 if __name__ == "__main__":
     import sys
     import json
+
+    uvloop.install()
 
     arg = sys.argv[1]
     print(json.dumps(asyncio.run(fetch(arg)), indent=2))

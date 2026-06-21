@@ -3,8 +3,14 @@
 import os
 
 import pytest
+import uvloop
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
+
+
+def pytest_asyncio_loop_factories(config, item):
+    """Run the async suite on uvloop, matching the loop the bin/ scripts use."""
+    return {"uvloop": uvloop.new_event_loop}
 
 
 @pytest.fixture(scope="session")
