@@ -73,7 +73,7 @@ class ActivityPubClient:
         to_sign = {
             "Date": formatdate(usegmt=True),
             "Host": urlsplit(url).netloc,
-            "User-Agent": "crawler.pub/0.5.3 (https://crawler.pub/; evanp@gatech.edu)",
+            "User-Agent": "crawler.pub/0.5.4 (https://crawler.pub/; evanp@gatech.edu)",
         }
         signature = signature_header(url, "GET", to_sign, self.key_id, self._key)
         headers = {**to_sign, "Signature": signature, "Accept": ACCEPT}
