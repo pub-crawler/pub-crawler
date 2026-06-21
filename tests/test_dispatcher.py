@@ -141,10 +141,18 @@ async def test_get_breaks_next_available_ties_by_insertion_order():
     dis.set_handler("actor", h)
 
     await dis.enqueue(
-        {"job_type": "actor", "actor_id": "https://x.example/users/first", "tag": "first"}
+        {
+            "job_type": "actor",
+            "actor_id": "https://x.example/users/first",
+            "tag": "first",
+        }
     )
     await dis.enqueue(
-        {"job_type": "actor", "actor_id": "https://x.example/users/second", "tag": "second"}
+        {
+            "job_type": "actor",
+            "actor_id": "https://x.example/users/second",
+            "tag": "second",
+        }
     )
 
     # Equal priority -> FIFO. Also proves the job dicts are never compared:
@@ -325,7 +333,11 @@ async def test_expired_excludes_jobs_still_within_their_lease():
 
     # Lease a second job much later, so its deadline is further out.
     clock.t = MAX_INFLIGHT - 100
-    fresh = {"job_type": "actor", "actor_id": "https://x.example/users/fresh", "tag": "fresh"}
+    fresh = {
+        "job_type": "actor",
+        "actor_id": "https://x.example/users/fresh",
+        "tag": "fresh",
+    }
     await dis.enqueue(fresh)
     fresh_job = await dis.get()  # deadline = 2*MAX_INFLIGHT - 100
 

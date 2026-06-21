@@ -54,7 +54,9 @@ async def prioritise_queue_by_depth_and_job_type(r):
             raise Exception(f"unrecognized job type {job_type}")
         depth = max(min(depth, 99), 0)
         job_type_code = max(min(job_type_code, 99), 0)
-        new_member = f"{depth:02d}|{job_type_code:02d}|{ts}|{json.dumps(job, sort_keys=True)}"
+        new_member = (
+            f"{depth:02d}|{job_type_code:02d}|{ts}|{json.dumps(job, sort_keys=True)}"
+        )
         batch.append((member_b, new_member, score))
         if len(batch) >= WRITE_BATCH:
             migrated += await flush(r, batch)

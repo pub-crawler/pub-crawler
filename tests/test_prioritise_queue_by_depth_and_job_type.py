@@ -25,7 +25,9 @@ import json
 from fakeredis import FakeAsyncRedis, FakeServer
 
 from pub_crawler.dispatcher import QUEUE
-from prioritise_queue_by_depth_and_job_type import prioritise_queue_by_depth_and_job_type
+from prioritise_queue_by_depth_and_job_type import (
+    prioritise_queue_by_depth_and_job_type,
+)
 
 TS = "2026-06-17T12:00:00.000000Z"
 

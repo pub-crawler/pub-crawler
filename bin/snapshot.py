@@ -4,6 +4,7 @@ import asyncio
 import asyncpg
 import uvloop
 
+
 def _escape(s):
     out = []
     for c in s:

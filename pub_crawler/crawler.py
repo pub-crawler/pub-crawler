@@ -30,14 +30,10 @@ async def worker(name, dispatcher, *, rand=random.random, sleep=_sleep_ms):
                 continue
             await dispatcher.done(job)
         except Exception as e:
-            logging.error(
-                f"{name} got dispatcher error {e}"
-            )
+            logging.error(f"{name} got dispatcher error {e}")
             dispatcher_failures += 1
             if dispatcher_failures > MAX_FAILURES:
-                logging.error(
-                    f"{name} too many dispatcher failures, quitting"
-                )
+                logging.error(f"{name} too many dispatcher failures, quitting")
                 return
             else:
                 sleep_time = (
@@ -47,9 +43,7 @@ async def worker(name, dispatcher, *, rand=random.random, sleep=_sleep_ms):
                     f"{name} dispatcher failure #{dispatcher_failures}, sleeping {sleep_time}ms"
                 )
                 await sleep(sleep_time)
-                logging.info(
-                    f"{name} awake again after {sleep_time}ms"
-                )
+                logging.info(f"{name} awake again after {sleep_time}ms")
 
 
 async def reap(dispatcher):

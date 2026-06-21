@@ -39,7 +39,9 @@ def page_job(page_id=PAGE, *, owner_id=OWNER, direction="followers", depth=1):
     }
 
 
-def collection_job(collection_id=COLLECTION, *, owner_id=OWNER, direction="followers", depth=1):
+def collection_job(
+    collection_id=COLLECTION, *, owner_id=OWNER, direction="followers", depth=1
+):
     return {
         "job_type": "collection",
         "collection_id": collection_id,
@@ -102,8 +104,12 @@ def test_page_id_ignores_depth_direction_and_owner():
 
 
 def test_collection_id_ignores_depth_direction_and_owner():
-    a = collection_job(depth=1, direction="followers", owner_id="https://x.example/users/a")
-    b = collection_job(depth=9, direction="following", owner_id="https://y.example/users/b")
+    a = collection_job(
+        depth=1, direction="followers", owner_id="https://x.example/users/a"
+    )
+    b = collection_job(
+        depth=9, direction="following", owner_id="https://y.example/users/b"
+    )
     assert job_id(a) == job_id(b)
 
 
@@ -148,11 +154,17 @@ def test_actor_without_actor_id_is_none():
 
 
 def test_page_without_page_id_is_none():
-    assert job_id({"job_type": "page", "owner_id": OWNER, "direction": "followers"}) is None
+    assert (
+        job_id({"job_type": "page", "owner_id": OWNER, "direction": "followers"})
+        is None
+    )
 
 
 def test_collection_without_collection_id_is_none():
-    assert job_id({"job_type": "collection", "owner_id": OWNER, "direction": "followers"}) is None
+    assert (
+        job_id({"job_type": "collection", "owner_id": OWNER, "direction": "followers"})
+        is None
+    )
 
 
 def test_webfinger_without_handle_is_none():
