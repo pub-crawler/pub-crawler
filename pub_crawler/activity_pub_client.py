@@ -34,7 +34,7 @@ class ActivityPubClient:
                 max_keepalive_connections=max_workers,
                 keepalive_expiry=DEFAULT_KEEPALIVE_EXPIRY,
             )
-            transport = httpx.AsyncHTTPTransport(retries=3, limits=limits)
+            transport = httpx.AsyncHTTPTransport(http2=True, retries=3, limits=limits)
         self.client = httpx.AsyncClient(transport=transport)
 
     async def get(self, url):
