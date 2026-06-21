@@ -3,6 +3,7 @@ import httpx
 from email.utils import formatdate
 from urllib.parse import urlsplit, urljoin, parse_qs
 import orjson
+from cryptography.hazmat.primitives import serialization
 
 MAX_RECURSIONS = 20
 ACCEPT = (
@@ -25,7 +26,6 @@ class ActivityPubClient:
         max_workers=DEFAULT_MAX_WORKERS,
     ):
         self.key_id = key_id
-        self.private_key_pem = private_key_pem
         self.general = general
         self.paged = paged
         self.burst = burst
@@ -37,6 +37,9 @@ class ActivityPubClient:
             )
             transport = httpx.AsyncHTTPTransport(http2=True, retries=3, limits=limits)
         self.client = httpx.AsyncClient(transport=transport)
+        self._key = serialization.load_pem_private_key(
+            private_key_pem.encode(), password=None
+        )
 
     async def get(self, url):
         json, _ = await self._get_with_headers(url, MAX_RECURSIONS)
@@ -72,9 +75,7 @@ class ActivityPubClient:
             "Host": urlsplit(url).netloc,
             "User-Agent": "crawler.pub/0.5.3 (https://crawler.pub/; evanp@gatech.edu)",
         }
-        signature = signature_header(
-            url, "GET", to_sign, self.key_id, self.private_key_pem
-        )
+        signature = signature_header(url, "GET", to_sign, self.key_id, self._key)
         headers = {**to_sign, "Signature": signature, "Accept": ACCEPT}
         if parts.query and "page" in parse_qs(parts.query):
             await self.paged.acquire(origin)

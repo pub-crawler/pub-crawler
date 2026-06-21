@@ -445,19 +445,20 @@ class FakeCounter:
         return self.result
 
 
-def na_client(general, paged, burst):
+def na_client(pem, general, paged, burst):
     handler = lambda request: httpx.Response(200, json={})  # never called here
     return ActivityPubClient(
-        KEY_ID, "pem", general, paged, burst, transport=httpx.MockTransport(handler)
+        KEY_ID, pem, general, paged, burst, transport=httpx.MockTransport(handler)
     )
 
 
-def test_next_available_non_paged_maxes_general_and_burst():
+def test_next_available_non_paged_maxes_general_and_burst(keypair):
+    pem, _ = keypair
     general = FakeCounter(100)
     paged = FakeCounter(500)
     burst = FakeCounter(300)
 
-    result = na_client(general, paged, burst).next_available(URL)  # no ?page=
+    result = na_client(pem, general, paged, burst).next_available(URL)  # no ?page=
 
     # Non-paged spends general + burst -> the later of those two; paged is
     # irrelevant to a plain GET.
@@ -467,12 +468,13 @@ def test_next_available_non_paged_maxes_general_and_burst():
     assert paged.origins == []
 
 
-def test_next_available_paged_returns_the_latest_gate_paged_binding():
+def test_next_available_paged_returns_the_latest_gate_paged_binding(keypair):
+    pem, _ = keypair
     general = FakeCounter(100)
     paged = FakeCounter(500)
     burst = FakeCounter(300)
 
-    result = na_client(general, paged, burst).next_available(PAGE_URL)  # ?page=2
+    result = na_client(pem, general, paged, burst).next_available(PAGE_URL)  # ?page=2
 
     # A paged request needs all three tokens -> can't go until the latest opens.
     assert result == 500  # max(general=100, paged=500, burst=300)
@@ -481,19 +483,21 @@ def test_next_available_paged_returns_the_latest_gate_paged_binding():
     assert burst.origins == [ORIGIN]
 
 
-def test_next_available_paged_returns_the_latest_gate_general_binding():
+def test_next_available_paged_returns_the_latest_gate_general_binding(keypair):
+    pem, _ = keypair
     # max() must pick general when it's the binding one.
     general = FakeCounter(900)
     paged = FakeCounter(300)
     burst = FakeCounter(300)
 
-    assert na_client(general, paged, burst).next_available(PAGE_URL) == 900
+    assert na_client(pem, general, paged, burst).next_available(PAGE_URL) == 900
 
 
-def test_next_available_returns_burst_when_it_is_the_binding_gate():
+def test_next_available_returns_burst_when_it_is_the_binding_gate(keypair):
+    pem, _ = keypair
     # The short-window burst cap can be the latest gate on a rapid run.
     general = FakeCounter(100)
     paged = FakeCounter(200)
     burst = FakeCounter(999)
 
-    assert na_client(general, paged, burst).next_available(PAGE_URL) == 999
+    assert na_client(pem, general, paged, burst).next_available(PAGE_URL) == 999

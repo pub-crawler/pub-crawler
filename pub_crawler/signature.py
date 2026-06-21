@@ -4,9 +4,9 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 
 
-def signature_header(url, method, headers, key_id, pem):
+def signature_header(url, method, headers, key_id, key):
     sstr = signing_string(url, method, headers)
-    signature = sign(sstr, pem)
+    signature = sign(sstr, key)
     hstr = header_string(headers)
     return format_header(
         {
@@ -41,9 +41,8 @@ def signing_string(url, method, headers):
     return "\n".join(lines)
 
 
-def sign(sstr, pem):
+def sign(sstr, key):
 
-    key = serialization.load_pem_private_key(pem.encode(), password=None)
     sig = key.sign(sstr.encode(), padding.PKCS1v15(), hashes.SHA256())
     return base64.b64encode(sig).decode()
 
