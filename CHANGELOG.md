@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-06-21
+
+### Changed
+
+- Change WebfingerClient, ActivityPubClient keepalive expiry to matches burst window
+- Use up to max_workers db connections in asyncpg pool
+- Use up to max_workers connections and
+keepalive connections in ActivityPubClient and WebfingerClient
+- use uvloop
+- use orjson
+- Use http2 for Web clients
+
 ## [0.5.1] - 2026-06-18
 
 ### Fixed
@@ -143,7 +155,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Crawler max depth defaults to 1.
 - `DatabaseGraph` no longer uses its own transaction.
 
-[Unreleased]: https://github.com/pub-crawler/pub-crawler/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/pub-crawler/pub-crawler/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/pub-crawler/pub-crawler/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/pub-crawler/pub-crawler/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/pub-crawler/pub-crawler/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/pub-crawler/pub-crawler/compare/v0.4.0...v0.4.1
