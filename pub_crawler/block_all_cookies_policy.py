@@ -1,5 +1,4 @@
 from http.cookiejar import DefaultCookiePolicy
-from urllib.request import Request
 
 
 class BlockAllCookiesPolicy(DefaultCookiePolicy):
