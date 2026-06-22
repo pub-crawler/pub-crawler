@@ -24,8 +24,7 @@ class WebfingerClient:
             )
             transport = httpx.AsyncHTTPTransport(http2=True, retries=3, limits=limits)
         self.client = httpx.AsyncClient(
-            transport=transport,
-            cookies=CookieJar(policy=BlockAllCookiesPolicy())
+            transport=transport, cookies=CookieJar(policy=BlockAllCookiesPolicy())
         )
 
     async def get_actor_id(self, wf):

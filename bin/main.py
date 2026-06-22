@@ -33,7 +33,7 @@ async def main(
     private_key_pem_data = Path(private_key_pem_filename).read_text()
 
     r = redis.asyncio.Redis.from_url(redis_url)
-    max_conns = max(max_workers//2, 1)
+    max_conns = max(max_workers // 2, 1)
     pool = await asyncpg.create_pool(
         database_url, max_size=max_conns, min_size=min(max_conns, 10)
     )

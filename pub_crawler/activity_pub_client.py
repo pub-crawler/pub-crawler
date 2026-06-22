@@ -39,8 +39,7 @@ class ActivityPubClient:
             )
             transport = httpx.AsyncHTTPTransport(http2=True, retries=3, limits=limits)
         self.client = httpx.AsyncClient(
-            transport=transport,
-            cookies=CookieJar(policy=BlockAllCookiesPolicy())
+            transport=transport, cookies=CookieJar(policy=BlockAllCookiesPolicy())
         )
         self._key = serialization.load_pem_private_key(
             private_key_pem.encode(), password=None

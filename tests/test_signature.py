@@ -121,7 +121,9 @@ def test_method_is_lowercased_in_request_target(keypair, private_key):
         "Content-Type": "application/activity+json",
     }
 
-    parsed = parse_signature(signature_header(url, "POST", headers, KEY_ID, private_key))
+    parsed = parse_signature(
+        signature_header(url, "POST", headers, KEY_ID, private_key)
+    )
 
     assert parsed["headers"] == "(request-target) host date digest content-type"
     verify_signature(
