@@ -1,9 +1,11 @@
 from pub_crawler.signature import signature_header
+from pub_crawler.block_all_cookies_policy import BlockAllCookiesPolicy
 import httpx
 from email.utils import formatdate
 from urllib.parse import urlsplit, urljoin, parse_qs
 import orjson
 from cryptography.hazmat.primitives import serialization
+from http.cookiejar import CookieJar
 
 MAX_RECURSIONS = 20
 ACCEPT = (
@@ -36,7 +38,10 @@ class ActivityPubClient:
                 keepalive_expiry=DEFAULT_KEEPALIVE_EXPIRY,
             )
             transport = httpx.AsyncHTTPTransport(http2=True, retries=3, limits=limits)
-        self.client = httpx.AsyncClient(transport=transport)
+        self.client = httpx.AsyncClient(
+            transport=transport,
+            cookies=CookieJar(policy=BlockAllCookiesPolicy())
+        )
         self._key = serialization.load_pem_private_key(
             private_key_pem.encode(), password=None
         )

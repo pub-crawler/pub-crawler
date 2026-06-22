@@ -2,6 +2,8 @@ import httpx
 from email.utils import formatdate
 from urllib.parse import urlsplit
 import orjson
+from pub_crawler.block_all_cookies_policy import BlockAllCookiesPolicy
+from http.cookiejar import CookieJar
 
 MEDIA_TYPES = [
     "application/activity+json",
@@ -21,7 +23,10 @@ class WebfingerClient:
                 keepalive_expiry=DEFAULT_KEEPALIVE_EXPIRY,
             )
             transport = httpx.AsyncHTTPTransport(http2=True, retries=3, limits=limits)
-        self.client = httpx.AsyncClient(transport=transport)
+        self.client = httpx.AsyncClient(
+            transport=transport,
+            cookies=CookieJar(policy=BlockAllCookiesPolicy())
+        )
 
     async def get_actor_id(self, wf):
         resource = self._normalize(wf)
