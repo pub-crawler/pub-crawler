@@ -20,7 +20,8 @@ def median_degree_by_depth(g):
 def median_degree_by_depth_file(gml_filename):
     g = igraph.Graph.Read_GML(gml_filename)
     dbd = median_degree_by_depth(g)
-    for depth, median_degree in dbd.items():
+    for depth in sorted(dbd.keys()):
+        median_degree = dbd[depth]
         print(f"Depth: {depth} Median degree: {median_degree}")
 
 
