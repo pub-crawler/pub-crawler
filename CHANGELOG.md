@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-06-24
+
+### Changed
+
+- snapshot.py now outputs two Parquet files; one for nodes and one for edges.
+
 ## [0.5.5] - 2026-06-22
 
 ### Fixed
@@ -179,7 +185,8 @@ keepalive connections in ActivityPubClient and WebfingerClient
 - Crawler max depth defaults to 1.
 - `DatabaseGraph` no longer uses its own transaction.
 
-[Unreleased]: https://github.com/pub-crawler/pub-crawler/compare/v0.5.5...HEAD
+[Unreleased]: https://github.com/pub-crawler/pub-crawler/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/pub-crawler/pub-crawler/compare/v0.5.5...v0.6.0
 [0.5.5]: https://github.com/pub-crawler/pub-crawler/compare/v0.5.4...v0.5.5
 [0.5.4]: https://github.com/pub-crawler/pub-crawler/compare/v0.5.3...v0.5.4
 [0.5.3]: https://github.com/pub-crawler/pub-crawler/compare/v0.5.2...v0.5.3
