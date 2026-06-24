@@ -1,0 +1,81 @@
+{{- if .Values.crestWatch.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "pub-crawler.fullname" . }}-crest-watch
+  labels:
+    {{- include "pub-crawler.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.crestWatch.schedule | quote }}
+  # One sampler at a time; if a run is still waiting on the RWO volume (e.g. the
+  # daily snapshot holds it), skip rather than queue.
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      # A sample is worthless if it can't attach the volume promptly; give up so the
+      # next tick gets a clean shot instead of a stuck pod blocking it (Forbid).
+      activeDeadlineSeconds: 120
+      ttlSecondsAfterFinished: 600
+      template:
+        metadata:
+          labels:
+            {{- include "pub-crawler.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: crest-watch
+        spec:
+          restartPolicy: Never
+          {{- with .Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          securityContext:
+            {{- toYaml .Values.podSecurityContext | nindent 12 }}
+          containers:
+            - name: crest-watch
+              image: {{ include "pub-crawler.image" . }}
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              # Append one queue-size / front-lag / memory sample to the log on the
+              # persistence volume. Connects to Valkey directly (REDIS_URL); no kubectl.
+              command:
+                - sh
+                - -c
+                - |
+                  python - >> {{ .Values.persistence.mountPath }}/crest-watch.log 2>&1 <<'PY'
+                  import os, redis, time, datetime
+                  r = redis.from_url(os.environ["REDIS_URL"])
+                  now = time.time() * 1000
+                  try:
+                      s = r.zcard("pub_crawler:queue")
+                      f = r.zrange("pub_crawler:queue", 0, 0, withscores=True)[0][1]
+                      info = r.info("memory")
+                      rss = info.get("used_memory_rss", 0)
+                      mx = info.get("maxmemory", 0) or 0
+                      used = info.get("used_memory", 0)
+                      ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M")
+                      pct = (100 * used / mx) if mx else 0
+                      print(f"  {ts}  q {s:>9,}  front {(now - f) / 3600000:5.1f}h  rss {rss / 1e9:.2f}/{mx / 1e9:.2f}G ({pct:.0f}%)", flush=True)
+                  except Exception as e:
+                      print(f"  sample error: {e}", flush=True)
+                  PY
+              securityContext:
+                {{- toYaml .Values.securityContext | nindent 16 }}
+              env:
+                {{- include "pub-crawler.redisEnv" . | nindent 16 }}
+              volumeMounts:
+                - name: data
+                  mountPath: {{ .Values.persistence.mountPath }}
+              {{- with .Values.crestWatch.resources }}
+              resources:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+          volumes:
+            - name: data
+              {{- if .Values.persistence.enabled }}
+              persistentVolumeClaim:
+                claimName: {{ include "pub-crawler.fullname" . }}-snapshots
+              {{- else }}
+              emptyDir: {}
+              {{- end }}
+{{- end }}

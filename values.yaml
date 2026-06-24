@@ -138,6 +138,21 @@ snapshot:
       cpu: 500m
       memory: 256Mi
 
+# Crest-watch: every 30 min, append one queue-size / front-lag / memory sample to
+# crest-watch.log on the persistence volume — in-cluster monitoring that survives
+# laptop sleep (unlike a local watch loop). Shares the snapshots PVC (RWO); a sample
+# that collides with the daily snapshot is skipped, not queued.
+crestWatch:
+  enabled: true
+  schedule: "*/30 * * * *"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
 # Persistent volume for snapshot GML output.
 persistence:
   enabled: true
