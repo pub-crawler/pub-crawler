@@ -10,15 +10,15 @@ from datetime import datetime
 
 node_schema = pa.schema(
     [
-        ("id", pa.uint32()),
+        ("id", pa.int32()),
         ("label", pa.string()),
         ("hostname", pa.string()),
         ("preferred_username", pa.string()),
         ("name", pa.string()),
         ("published", pa.timestamp("s", tz="UTC")),
         ("type", pa.string()),
-        ("followers_count", pa.uint32()),
-        ("following_count", pa.uint32()),
+        ("followers_count", pa.int32()),
+        ("following_count", pa.int32()),
     ]
 )
 
