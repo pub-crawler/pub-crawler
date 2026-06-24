@@ -31,11 +31,13 @@ spec:
               command:
                 - sh
                 - -c
-                # Capture the dated name once so the file written and the file
-                # gzipped can't differ if the clock ticks between evaluations.
+                # Capture the dated stamp once so the nodes and edges files share
+                # the same timestamp even if the clock ticks between evaluations.
                 - |
-                  f={{ .Values.persistence.mountPath }}/snapshot-$(date +%F-%H%M%S).gml
-                  python bin/snapshot.py "$f" && gzip "$f"
+                  ts=$(date +%F-%H%M%S)
+                  nodes={{ .Values.persistence.mountPath }}/snapshot-$ts-nodes.parquet
+                  edges={{ .Values.persistence.mountPath }}/snapshot-$ts-edges.parquet
+                  python bin/snapshot.py "$nodes" "$edges"
               securityContext:
                 {{- toYaml .Values.securityContext | nindent 16 }}
               env:
