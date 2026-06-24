@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-06-24
+
+### Fixed
+
+- Bad commands in the Dockerfile made the image too large to build.
+- Leave some unused libarrow libraries out of the build.
+
 ## [0.6.0] - 2026-06-24
 
 ### Changed
@@ -185,7 +192,8 @@ keepalive connections in ActivityPubClient and WebfingerClient
 - Crawler max depth defaults to 1.
 - `DatabaseGraph` no longer uses its own transaction.
 
-[Unreleased]: https://github.com/pub-crawler/pub-crawler/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/pub-crawler/pub-crawler/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/pub-crawler/pub-crawler/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/pub-crawler/pub-crawler/compare/v0.5.5...v0.6.0
 [0.5.5]: https://github.com/pub-crawler/pub-crawler/compare/v0.5.4...v0.5.5
 [0.5.4]: https://github.com/pub-crawler/pub-crawler/compare/v0.5.3...v0.5.4
