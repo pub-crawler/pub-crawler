@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- discover_webfingers.py script that takes a file full of webfingers
+  and outputs a CSV with webfinger,actor_id columns
+- add_seeds_by_actor_id.py which adds a seed set of actor IDs from a file
+
+### Fixed
+
+- WebfingerClient correctly handles mismatched subject/resource pairs,
+  redirects, and internationalized domains.
+
+
 ## [0.6.1] - 2026-06-24
 
 ### Fixed
