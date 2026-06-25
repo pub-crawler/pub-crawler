@@ -4,6 +4,7 @@ from urllib.parse import urlsplit
 import orjson
 from pub_crawler.block_all_cookies_policy import BlockAllCookiesPolicy
 from http.cookiejar import CookieJar
+import idna
 
 MEDIA_TYPES = [
     "application/activity+json",
@@ -38,13 +39,9 @@ class WebfingerClient:
         }
         await self.general.acquire(origin)
         await self.burst.acquire(origin)
-        res = await self.client.get(url, headers=headers)
+        res = await self.client.get(url, headers=headers, follow_redirects=True)
         res.raise_for_status()
         doc = orjson.loads(res.content)
-        if doc["subject"] != resource:
-            raise Exception(
-                f"Webfinger subject {doc["subject"]} does not match {resource}"
-            )
         for media_type in MEDIA_TYPES:
             for link in doc["links"]:
                 if link.get("type") == media_type and link.get("rel") == "self":
@@ -62,9 +59,13 @@ class WebfingerClient:
         )
 
     def _normalize(self, wf):
+        full = None
         if wf[0] == "@":
-            return "acct:" + wf[1:]
+            full = wf[1:]
         elif wf.startswith("acct:"):
-            return wf
+            full = wf[5:]
         else:
-            return "acct:" + wf
+            full = wf
+        username, hostname = full.split("@")
+        decoded = idna.encode(hostname, uts46=True).decode("ascii")
+        return f"acct:{username}@{decoded}"

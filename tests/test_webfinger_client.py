@@ -141,6 +141,71 @@ async def test_unknown_account_raises_http_error():
 
 
 # ---------------------------------------------------------------------------
+# Real-world resolution quirks found while re-validating dropped seeds.
+# Each test encodes a fix-contract; they stay red until the bug is fixed.
+# ---------------------------------------------------------------------------
+
+
+async def test_follows_redirect_to_delegated_webfinger():
+    # Many instances delegate webfinger from their apex domain to a subdomain
+    # via 301/302 (e.g. example.social -> mastodon.example.social). The lookup
+    # must follow the redirect and resolve against the final host, not give up.
+    def handler(request):
+        if request.url.host == "example.social":
+            return httpx.Response(
+                302,
+                headers={
+                    "Location": "https://mastodon.example.social/.well-known/"
+                    "webfinger?resource=acct:bot@example.social"
+                },
+            )
+        return httpx.Response(
+            200, json={"subject": "acct:bot@example.social", "links": [AP_SELF]}
+        )
+
+    assert await make_client(handler).get_actor_id("bot@example.social") == ACTOR_URL
+
+
+async def test_tolerates_subject_case_mismatch():
+    # The server echoes its canonical, mixed-case subject while the queried
+    # handle is lower-case. A case-only difference is normalization, not a wrong
+    # account: a resolution carrying a valid self link must not be rejected.
+    def handler(request):
+        return httpx.Response(
+            200, json={"subject": "acct:Bot@crawler.pub", "links": [AP_SELF]}
+        )
+
+    assert await make_client(handler).get_actor_id("bot@crawler.pub") == ACTOR_URL
+
+
+async def test_idn_host_uses_punycode_in_authority_and_resource():
+    # An internationalized domain must be sent as its A-label (punycode) in BOTH
+    # the request authority AND the acct: resource -- never the raw U-label nor a
+    # percent-encoded host (acct:org@baw%C3%BC.social), which the server can't
+    # match and answers 404.  bawü.social -> xn--baw-joa.social
+    punycode = "xn--baw-joa.social"
+    seen = {}
+
+    def handler(request):
+        seen["webfinger"] = request
+        return httpx.Response(
+            200, json={"subject": f"acct:org@{punycode}", "links": [AP_SELF]}
+        )
+
+    actor_id = await make_client(handler).get_actor_id("org@bawü.social")
+
+    assert actor_id == ACTOR_URL
+    wf = seen["webfinger"]
+    # NB: url.host IDNA-*decodes* back to the U-label ('bawü.social'); the A-label
+    # actually on the wire is url.raw_host (bytes). httpx always punycodes the
+    # authority itself, so this line is documentary -- the resource assertion
+    # below is the one that catches the bug, since httpx percent-encodes query
+    # values but never punycodes them.
+    assert wf.url.raw_host == punycode.encode("ascii")
+    assert wf.url.params["resource"] == f"acct:org@{punycode}"
+
+
+# ---------------------------------------------------------------------------
 # Rate limiting: acquire the shared general counter before fetching
 # ---------------------------------------------------------------------------
 
