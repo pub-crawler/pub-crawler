@@ -25,6 +25,7 @@ ordering promise.
 from datetime import datetime, timezone
 
 import pyarrow.parquet as pq
+import pytest
 
 from snapshot import snapshot
 from support import FakeGraph
@@ -216,3 +217,34 @@ async def test_skips_edges_whose_endpoint_has_no_node_row(tmp_path):
 
     edges = pq.read_table(str(edges_out)).to_pylist()
     assert edges == [{"from": g._ids[EVAN], "to": g._ids[ALICE]}]  # only the survivor
+
+
+@pytest.mark.parametrize(
+    "bad_published",
+    [
+        "-0001-11-30T00:00:00Z",  # the "year zero" value that actually crashed prod
+        "0000-00-00T00:00:00Z",  # another null-date sentinel some software emits
+        "not a date",  # outright garbage
+    ],
+)
+async def test_malformed_published_does_not_sink_the_snapshot(tmp_path, bad_published):
+    # A single actor with an unparseable `published` must not crash the node pass —
+    # in production one such row (`-0001-11-30T00:00:00Z`) failed every nightly run.
+    # The bad value parses to null (same as a missing one), that node is still
+    # written, and a well-formed node alongside it is unaffected.
+    g = FakeGraph()
+    await g.ensure_node(EVAN)
+    await g.set_node_properties(EVAN, {"name": "Evan P", "published": bad_published})
+    await g.ensure_node(ALICE)
+    await g.set_node_property(ALICE, "published", "2020-06-01T00:00:00Z")
+    nodes_out = tmp_path / "nodes.parquet"
+    edges_out = tmp_path / "edges.parquet"
+
+    await snapshot(g, str(nodes_out), str(edges_out))  # must not raise
+
+    nodes = _rows_by(str(nodes_out), "label")
+    assert set(nodes) == {EVAN, ALICE}  # the bad row didn't drop the whole snapshot
+    assert nodes[EVAN]["published"] is None  # unparseable -> null
+    assert nodes[EVAN]["name"] == "Evan P"  # the rest of the bad node survives
+    # the well-formed neighbour is untouched
+    assert nodes[ALICE]["published"] == datetime(2020, 6, 1, tzinfo=timezone.utc)
