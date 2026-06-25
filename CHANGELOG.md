@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-06-25
+
 ### Added
 
 - discover_webfingers.py script that takes a file full of webfingers
@@ -17,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - WebfingerClient correctly handles mismatched subject/resource pairs,
   redirects, and internationalized domains.
-
+- snapshot won't fail on a malformed `published` date
 
 ## [0.6.1] - 2026-06-24
 
@@ -204,7 +206,8 @@ keepalive connections in ActivityPubClient and WebfingerClient
 - Crawler max depth defaults to 1.
 - `DatabaseGraph` no longer uses its own transaction.
 
-[Unreleased]: https://github.com/pub-crawler/pub-crawler/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/pub-crawler/pub-crawler/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/pub-crawler/pub-crawler/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/pub-crawler/pub-crawler/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/pub-crawler/pub-crawler/compare/v0.5.5...v0.6.0
 [0.5.5]: https://github.com/pub-crawler/pub-crawler/compare/v0.5.4...v0.5.5
