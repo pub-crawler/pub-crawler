@@ -33,17 +33,15 @@ edge_schema = pa.schema(
 
 MAX_EDGE_BATCH = 1_000_000
 
+MAX_INT32 = 2**31 - 1
 
 async def snapshot_nodes(G, node_filename):
     max_id = -1
-    other_props = [
-        "hostname",
-        "preferred_username",
-        "name",
-        "type",
+    int_props = [
         "followers_count",
         "following_count",
     ]
+    other_props = ["hostname", "preferred_username", "name", "type"]
     batch = collections.defaultdict(list)
     total = 0
     with pq.ParquetWriter(node_filename, node_schema) as writer:
@@ -61,6 +59,22 @@ async def snapshot_nodes(G, node_filename):
                     )
                     published = None
             batch["published"].append(published)
+            for prop in int_props:
+                pvalue = props.get(prop)
+                value = None
+                if isinstance(pvalue, int):
+                    value = pvalue
+                elif isinstance(pvalue, str):
+                    try:
+                        value = int(pvalue)
+                    except:
+                        value = None
+                else:
+                    value = None
+                if isinstance(value, int) and 0 <= value <= MAX_INT32:
+                    batch[prop].append(value)
+                else:
+                    batch[prop].append(None)
             for prop in other_props:
                 batch[prop].append(props.get(prop))
             if len(batch["id"]) >= MAX_NODE_BATCH:

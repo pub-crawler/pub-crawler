@@ -248,3 +248,68 @@ async def test_malformed_published_does_not_sink_the_snapshot(tmp_path, bad_publ
     assert nodes[EVAN]["name"] == "Evan P"  # the rest of the bad node survives
     # the well-formed neighbour is untouched
     assert nodes[ALICE]["published"] == datetime(2020, 6, 1, tzinfo=timezone.utc)
+
+
+async def test_string_valued_counts_are_coerced_to_int(tmp_path):
+    # node_property values come back as strings, so followers_count / following_count
+    # can arrive as e.g. "16" while the parquet columns are int32. A string count must
+    # be coerced to int, not crash the node pass — a single "16" took down every
+    # nightly run in production. A node carrying native ints alongside is unaffected.
+    g = FakeGraph()
+    await g.ensure_node(EVAN)
+    await g.set_node_properties(EVAN, {"followers_count": "16", "following_count": "42"})
+    await g.ensure_node(ALICE)
+    await g.set_node_properties(ALICE, {"followers_count": 5, "following_count": 7})
+    nodes_out = tmp_path / "nodes.parquet"
+    edges_out = tmp_path / "edges.parquet"
+
+    await snapshot(g, str(nodes_out), str(edges_out))  # must not raise
+
+    nodes = _rows_by(str(nodes_out), "label")
+    assert set(nodes) == {EVAN, ALICE}  # the string-valued row didn't sink the snapshot
+    assert nodes[EVAN]["followers_count"] == 16  # "16" -> 16
+    assert nodes[EVAN]["following_count"] == 42  # "42" -> 42
+    assert nodes[ALICE]["followers_count"] == 5  # native ints still pass through
+    assert nodes[ALICE]["following_count"] == 7
+
+
+INT32_MAX = 2**31 - 1
+
+
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        # in range -> the value (int or numeric string)
+        (0, 0),
+        (16, 16),
+        ("16", 16),
+        (INT32_MAX, INT32_MAX),  # the ceiling itself is in range
+        (str(INT32_MAX), INT32_MAX),
+        # out of range -> null (the column is int32; out-of-range reals exist, e.g.
+        # puckipedia's counts, so they're nulled rather than crashing the write)
+        (INT32_MAX + 1, None),  # one past the ceiling
+        (5_000_000_000, None),
+        ("5000000000", None),
+        (-1, None),  # negative
+        ("-5", None),
+        # unparseable string -> null
+        ("abc", None),
+        ("", None),
+    ],
+)
+async def test_count_clamps_to_int32_range_else_null(tmp_path, raw, expected):
+    # Contract for followers_count / following_count, for both int and string input:
+    #   value < 0          -> None
+    #   value > 2**31 - 1  -> None
+    #   otherwise          -> the int value
+    g = FakeGraph()
+    await g.ensure_node(EVAN)
+    await g.set_node_properties(EVAN, {"followers_count": raw, "following_count": raw})
+    nodes_out = tmp_path / "nodes.parquet"
+    edges_out = tmp_path / "edges.parquet"
+
+    await snapshot(g, str(nodes_out), str(edges_out))  # must not raise
+
+    evan = _rows_by(str(nodes_out), "label")[EVAN]
+    assert evan["followers_count"] == expected
+    assert evan["following_count"] == expected
