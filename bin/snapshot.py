@@ -35,6 +35,7 @@ MAX_EDGE_BATCH = 1_000_000
 
 MAX_INT32 = 2**31 - 1
 
+
 async def snapshot_nodes(G, node_filename):
     max_id = -1
     int_props = [

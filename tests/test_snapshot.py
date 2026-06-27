@@ -257,7 +257,9 @@ async def test_string_valued_counts_are_coerced_to_int(tmp_path):
     # nightly run in production. A node carrying native ints alongside is unaffected.
     g = FakeGraph()
     await g.ensure_node(EVAN)
-    await g.set_node_properties(EVAN, {"followers_count": "16", "following_count": "42"})
+    await g.set_node_properties(
+        EVAN, {"followers_count": "16", "following_count": "42"}
+    )
     await g.ensure_node(ALICE)
     await g.set_node_properties(ALICE, {"followers_count": 5, "following_count": 7})
     nodes_out = tmp_path / "nodes.parquet"
