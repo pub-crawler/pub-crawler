@@ -1,0 +1,41 @@
+[project]
+name = "pub-crawler"
+version = "0.7.1"
+description = "A crawler for the social graph of the ActivityPub network"
+readme = "README.md"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
+requires-python = ">=3.13"
+dependencies = [
+    "asyncpg>=0.31.0",
+    "cachetools>=7.1.4",
+    "cryptography>=48.0.0",
+    "httpx[http2]>=0.28.1",
+    "idna>=3.18",
+    "networkx>=3.6.1",
+    "orjson>=3.11.9",
+    "pyarrow>=24.0.0",
+    "redis>=8.0.0",
+    "uvloop>=0.22.1",
+]
+
+[dependency-groups]
+dev = [
+    "black>=26.5.1",
+    "fakeredis>=2.36.0",
+    "pytest>=9.0.3",
+    "pytest-asyncio>=1.4.0",
+]
+
+[tool.black]
+target-version = ["py313"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = [".", "bin", "fixup"]
+addopts = "-m 'not live and not db'"
+markers = [
+    "live: hits the deployed static site at crawler.pub over the network (run with -m live)",
+    "db: runs the Graph contract suite against a real Postgres (set TEST_DATABASE_URL; run with -m db)",
+]

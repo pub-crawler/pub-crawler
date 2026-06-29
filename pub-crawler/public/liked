@@ -1,0 +1,13 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/activitystreams",
+    "https://w3id.org/fep/5711"
+  ],
+  "id": "https://crawler.pub/liked",
+  "type": "OrderedCollection",
+  "name": "Pub Crawler's liked",
+  "totalItems": 0,
+  "attributedTo": "https://crawler.pub/actor",
+  "to": "as:Public",
+  "likedOf": "https://crawler.pub/actor"
+}

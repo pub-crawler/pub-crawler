@@ -1,0 +1,25 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/activitystreams",
+    "https://w3id.org/security/v1",
+    "https://purl.archive.org/socialweb/webfinger"
+  ],
+  "id": "https://crawler.pub/actor",
+  "type": "Application",
+  "name": "Pub Crawler",
+  "preferredUsername": "bot",
+  "webfinger": "acct:bot@crawler.pub",
+  "summary": "A bot that follows links across the ActivityPub network.",
+  "inbox": "https://crawler.pub/inbox",
+  "outbox": "https://crawler.pub/outbox",
+  "following": "https://crawler.pub/following",
+  "followers": "https://crawler.pub/followers",
+  "liked": "https://crawler.pub/liked",
+  "to": "as:Public",
+  "publicKey": {
+    "id": "https://crawler.pub/actor#main-key",
+    "type": "CryptographicKey",
+    "owner": "https://crawler.pub/actor",
+    "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtplQvAwkPlCCmIlGW+ws\nNweUKwOJt/YLb6/plUyrw46xqO2FN6l8q8MdBfZ6Od4VaIiKEP9R2OuJb8esBNUL\nsiQ0wAwywr0bR9jGFahW3Im9cr/zcD28Fi+Pd2bI60vxPNwwoR85yn5r6I5+iCHK\nRBgo0q/87XLfed9z4d64TBQQ7Y2IrKWEg1tLVyUKpLYqn833p7ga7hqyl/dHAka9\naS8ELkRsOkGlBvFUDnU1LJf7iOTG+HbZkraK2Fp1gsl8jAWjHYgM5kB/AnWCAnKR\n9j2e37gabgssN6EvNbkCoM5uf7jvFyb82SqNzpgbti75S29upVhZO9gLR3duETW2\nTQIDAQAB\n-----END PUBLIC KEY-----\n"
+  }
+}

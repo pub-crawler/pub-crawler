@@ -1,0 +1,206 @@
+import logging
+import json
+
+import redis.asyncio
+import asyncpg
+
+from pub_crawler.database import database_setup
+from pub_crawler.database_graph import DatabaseGraph
+from pub_crawler.dispatcher import QUEUE, INFLIGHT, FAILED, SEEN
+from pub_crawler.job_id import job_id
+
+LOG_INTERVAL = 10_000
+SCAN_COUNT = 1000
+WRITE_BATCH = 1000
+
+
+async def del_seen(r):
+    await r.delete(SEEN)
+
+
+async def batch_sadd(r, batch):
+    if not batch:
+        return 0
+    async with r.pipeline(transaction=False) as pipe:
+        for jid in batch:
+            pipe.sadd(SEEN, jid)
+        await pipe.execute()
+    count = len(batch)
+    batch.clear()
+    return count
+
+
+async def batch_sadd_and_zrem(r, batch):
+    if not batch:
+        return 0, 0
+    to_zrem = []
+    async with r.pipeline(transaction=False) as pipe:
+        for _, jid in batch:
+            pipe.sadd(SEEN, jid)
+        results = await pipe.execute()
+        for i in range(len(results)):
+            if results[i] == 0:
+                to_zrem.append(batch[i][0])
+        if len(to_zrem) > 0:
+            for member in to_zrem:
+                pipe.zrem(QUEUE, member)
+            await pipe.execute()
+    count = len(batch) - len(to_zrem)
+    zcount = len(to_zrem)
+    batch.clear()
+    return count, zcount
+
+
+async def add_in_flight_to_seen(r):
+    tried = 0
+    succeeded = 0
+    for key in await r.hkeys(INFLIGHT):
+        tried += 1
+        if tried % LOG_INTERVAL == 0:
+            logging.info(f"{tried} in-flight jobs seen")
+        job = None
+        try:
+            job = json.loads(key)
+        except Exception as e:
+            logging.warning(f"Could not parse in-flight job {key}: {e}; skipping")
+            continue
+        jid = job_id(job)
+        if jid is None:
+            logging.warning(f"Unidentifiable in-flight job: {key}; skipping")
+            continue
+        try:
+            await r.sadd(SEEN, jid)
+        except Exception as e:
+            logging.warning(
+                f"Exception adding in-flight job {jid} to seen: {e}; skipping"
+            )
+            continue
+        logging.debug(f"Added in-flight job {jid}")
+        succeeded += 1
+    return tried, succeeded
+
+
+async def add_failed_to_seen(r, *, batch_size=WRITE_BATCH):
+    tried = 0
+    succeeded = 0
+    batch = []
+    async for key in r.sscan_iter(FAILED, count=SCAN_COUNT):
+        tried += 1
+        if tried % LOG_INTERVAL == 0:
+            logging.info(f"{tried} failed jobs seen")
+        job = None
+        try:
+            job = json.loads(key)
+        except Exception as e:
+            logging.warning(f"Could not parse failed job: {key} because {e}; skipping")
+            continue
+        jid = job_id(job)
+        if jid is None:
+            logging.warning(f"Unidentifiable failed job: {key}; skipping")
+            continue
+        batch.append(jid)
+        if len(batch) >= batch_size:
+            succeeded = succeeded + await batch_sadd(r, batch)
+    succeeded = succeeded + await batch_sadd(r, batch)
+    return tried, succeeded
+
+
+async def add_graph_to_seen(r, G, *, batch_size=WRITE_BATCH):
+    tried = 0
+    succeeded = 0
+    batch = []
+    async for _, label, props in G.all_nodes():
+        tried += 1
+        if tried % LOG_INTERVAL == 0:
+            logging.info(f"{tried} successful jobs seen")
+        if "last_fetch_date" not in props:
+            logging.debug(f"Unfetched actor: {label}; skipping")
+            continue
+        job = {"job_type": "actor", "actor_id": label, "depth": props.get("depth")}
+        jid = job_id(job)
+        if jid is None:
+            logging.warning(f"Unidentifiable successful job: {job}; skipping")
+            continue
+        batch.append(jid)
+        if len(batch) >= batch_size:
+            succeeded = succeeded + await batch_sadd(r, batch)
+    succeeded = succeeded + await batch_sadd(r, batch)
+    return tried, succeeded
+
+
+async def add_queue_to_seen_and_dedupe(r, *, batch_size=WRITE_BATCH):
+    tried = 0
+    succeeded = 0
+    deduped = 0
+    batch = []
+    async for member, _ in r.zscan_iter(QUEUE, count=SCAN_COUNT):
+        tried += 1
+        if tried % LOG_INTERVAL == 0:
+            logging.info(f"{tried} queue jobs seen")
+        job = None
+        try:
+            _, jobstr = member.decode().split("|", 1)
+            job = json.loads(jobstr)
+        except Exception as e:
+            logging.warning(f"Could not parse queue job {member}: {e}; skipping")
+            continue
+        jid = job_id(job)
+        if jid is None:
+            logging.warning(f"Unidentifiable queue job: {job}; skipping")
+            continue
+        batch.append((member, jid))
+        if len(batch) >= batch_size:
+            sadded, zremmed = await batch_sadd_and_zrem(r, batch)
+            succeeded += sadded
+            deduped += zremmed
+    sadded, zremmed = await batch_sadd_and_zrem(r, batch)
+    succeeded += sadded
+    deduped += zremmed
+    return tried, succeeded, deduped
+
+
+async def fixup_seen(r, G, *, batch_size=WRITE_BATCH):
+    await del_seen(r)
+    logging.info("Deleted seen")
+    tried, succeeded = await add_in_flight_to_seen(r)
+    logging.info(f"{succeeded}/{tried} in-flight jobs added")
+    tried, succeeded = await add_failed_to_seen(r, batch_size=batch_size)
+    logging.info(f"{succeeded}/{tried} failed jobs added")
+    tried, succeeded = await add_graph_to_seen(r, G, batch_size=batch_size)
+    logging.info(f"{succeeded}/{tried} successful jobs added")
+    tried, succeeded, deduped = await add_queue_to_seen_and_dedupe(
+        r, batch_size=batch_size
+    )
+    logging.info(f"{succeeded}/{tried} queue jobs added; {deduped} jobs deduped")
+
+
+async def main(redis_url, database_url):
+    r = redis.asyncio.Redis.from_url(redis_url)
+    pool = await asyncpg.create_pool(database_url)
+    async with pool.acquire() as conn:
+        await database_setup(conn)
+    G = DatabaseGraph(pool)
+
+    await fixup_seen(r, G)
+
+
+if __name__ == "__main__":
+    import os
+    import asyncio
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    )
+
+    redis_url = os.environ.get("REDIS_URL")
+    if not redis_url:
+        print("Set REDIS_URL environment variable")
+        exit(-1)
+
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        print("Set DATABASE_URL environment variable")
+        exit(-1)
+
+    asyncio.run(main(redis_url, database_url))

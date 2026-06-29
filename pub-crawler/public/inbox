@@ -1,0 +1,13 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/activitystreams",
+    "https://w3id.org/fep/5711"
+  ],
+  "id": "https://crawler.pub/inbox",
+  "type": "OrderedCollection",
+  "name": "Pub Crawler's inbox",
+  "totalItems": 0,
+  "attributedTo": "https://crawler.pub/actor",
+  "to": "https://crawler.pub/actor",
+  "inboxOf": "https://crawler.pub/actor"
+}

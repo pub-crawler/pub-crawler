@@ -1,0 +1,6 @@
+<FilesMatch "^(actor|inbox|outbox|followers|following|liked)$">
+  ForceType application/activity+json
+</FilesMatch>
+<Files "webfinger">
+  ForceType application/jrd+json
+</Files>
