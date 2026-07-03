@@ -32,13 +32,15 @@ We are also working on a shared project. Reading and modifying lots of LLM-gener
 
 ## Directories
 
-- pub-crawler/ - the crawler that collects data for this project
+### pub-crawler/
 
-## pub-crawler-chart
+The crawler that collects data for this project.
+
+### pub-crawler-chart
 
 - The [Helm](https://helm.sh/) chart for deploying this project.
 
-## pub-crawler-data-analysis
+### pub-crawler-data-analysis
 
 - The scripts we use to analyse the data from the crawl.
 
@@ -56,13 +58,19 @@ We prefer [test-driven development](https://en.wikipedia.org/wiki/Test-driven_de
 
 ## Documentation
 
-We keep documention as Markdown files, with [Mermaid](https://mermaid.js.org/) diagrams, in the ./docs/ directory of each sub-project.
+We keep documentation as Markdown files, with [Mermaid](https://mermaid.js.org/) diagrams, in the ./docs/ directory of each sub-project.
 
 We keep a changelog in [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
 ## Python
 
 We use [uv](https://docs.astral.sh/uv/) for package management and building the code.
+
+We use [pytest](https://docs.pytest.org/en/stable/) for testing. To run tests:
+
+```bash
+uv run pytest
+```
 
 ## Git
 
