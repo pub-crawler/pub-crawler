@@ -72,8 +72,24 @@ We use [pytest](https://docs.pytest.org/en/stable/) for testing. To run tests:
 uv run pytest
 ```
 
+We use [black](https://pypi.org/project/black/) for formatting. To reformat the code for a directory, run this:
+
+```bash
+uv run black .
+```
+
+We should run this before committing. If running black changes code that's not in the current working set of files (because someone didn't run black before committing), we commit them separately as a "style: ..." commit.
+
 ## Git
 
 We use [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) for commit messages.
 
 We use [Semantic Versioning](https://semver.org/spec/v2.0.0.html) to track versions of the code. Each sub-project is tracked separately.
+
+We try to have minimal, clean commits, so if we need to roll something back, merge, or reapply, it works.
+
+## Network science
+
+We are doing a lot of network science in this project, and our team has a mixed level of experience with the topic.
+
+Barabasi's [Network Science](https://networksciencebook.com) text book is free to read online and has great explanations of a lot of important topics.
