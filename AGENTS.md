@@ -6,7 +6,7 @@ This is a monorepo for a project by 4 graduate students at Georgia Tech, as part
 
 Our work is part of an assignment for the Modern Internet Research Methods (MIRM) graduate course at Georgia Tech. We are working on a research paper together, and the code we work on here is part of our deliverables.
 
-Our work with LLMs here is governed by the [Georgia Tech Academic Honor Code](https://policylibrary.gatech.edu/student-life/academic-honor-code) and [Georgia Tech's Office of Information Technology AI Standards and Guidance](https://oit.gatech.edu/ai/guidance).
+Our work with LLMs here is governed by the [Georgia Tech Academic Honor Code](https://policylibrary.gatech.edu/student-life/academic-honor-code) and [Georgia Tech's Office of Information Technology AI Standards and Guidance](https://oit.gatech.edu/ai/guidance), as well as the [Guidance for Effective and Responsible Use of AI in Research](https://grad.gatech.edu/sites/default/files/documents/Guidance%20for%20Effective%20and%20Responsible%20Use%20of%20AI%20in%20Research.pdf)
 
 We are expected to write our own code, and disclose when and where we use AI, to each other, to the instructors, and to readers of our paper. If we don't feel comfortable disclosing the AI use, that's a good sign that we shouldn't do it.
 
