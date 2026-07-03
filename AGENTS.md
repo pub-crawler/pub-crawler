@@ -93,3 +93,31 @@ We try to have minimal, clean commits, so if we need to roll something back, mer
 We are doing a lot of network science in this project, and our team has a mixed level of experience with the topic.
 
 Barabasi's [Network Science](https://networksciencebook.com) text book is free to read online and has great explanations of a lot of important topics.
+
+## The Fediverse
+
+The [Fediverse](https://en.wikipedia.org/wiki/Fediverse) is a coalition of interoperable social network platforms. The platforms use the [ActivityPub](https://en.wikipedia.org/wiki/ActivityPub) protocol to connect server to server.
+
+There are about 40,000 known servers on the Fediverse, according to [FediDB](https://fedidb.com/). There are about 13.3M people on the Fediverse, but only about 900K monthly active users.
+
+Many servers on the Fediverse use Open Source software like Mastodon, Pixelfed, Misskey, WordPress or Lemmy. Other Fediverse platforms are proprietary, like Flipboard or Meta Threads.
+
+Servers are also called instances. They are sometimes called "nodes", although that is ambiguous, since in the social network, the nodes are people.
+
+Users are also called nodes or actors. Not all users are people. Bots, applications, and services can also be actors. There are also group actors.
+
+FediDB crawls the Fediverse server-by-server, mostly using the Mastodon API and the Nodeinfo standard. PubCrawler crawls the network actor-by-actor, using the data shared by the ActivityPub protocol.
+
+The Fediverse network is directed. An actor's "followers" are the inbound edges of the graph. The actor's "following" collection is its outbound graph.
+
+Like many social network graphs, the inbound edges seem to follow a power law distribution (but we should confirm this) and the outbound edges do not. People only have so much attention to give, so they can only follow so many other actors!
+
+## Bad actors
+
+[IFTAS](https://iftas.org/) is the Independent (?) Fediverse Trust and Safety group. They are a non-profit that tracks bad actors on the Fediverse.
+
+IFTAS keeps a list of "Do Not Interact" (DNI) servers, which are the worst of the worst. These servers participate in CSAM, racist discussions, and harassing and abusing other users on the network.
+
+Even the domain names of these servers can be upsettings -- they can have racist, homophobic or misogynistic slurs, references to violence, sexual assault.
+
+Agents should take care when talking about the "bad actors" to get positive opt-in from the user, and avoid traumatising the user casually.
