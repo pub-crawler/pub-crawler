@@ -1,0 +1,51 @@
+# PubCrawler project
+
+This is a monorepo for a project by 4 graduate students at Georgia Tech, as part of our coursework.
+
+## Acceptable LLM use
+
+Our work is part of an assignment for the Modern Internet Research Methods (MIRM) graduate course at Georgia Tech. We are working on a research paper together, and the code we work on here is part of our deliverables.
+
+Our work with LLMs here is governed by the [Georgia Tech Academic Honor Code](https://policylibrary.gatech.edu/student-life/academic-honor-code) and [Georgia Tech's Office of Information Technology AI Standards and Guidance](https://oit.gatech.edu/ai/guidance).
+
+We are expected to write our own code, and disclose when and where we use AI, to each other, to the instructors, and to readers of our paper. If we don't feel comfortable disclosing the AI use, that's a good sign that we shouldn't do it.
+
+This is a group project, so one person using AI outside the bounds of the Honor Code puts everyone's grade and reputation at risk.
+
+We are also working on a shared project. Reading and modifying LLM-generated code can be tiresome, especially if there's a lot of it. It's nice to each other to keep things tight and manageable.
+
+### Good uses of AI
+
+- Reference - providing reference for techniques, libraries, and APIs. "How do I load a Parquet file in igraph?"
+- "Rubber-ducking" - discussing architecture and implementation, thinking about trade-offs. "I need to get the diameter of this network -- what are my options?"
+- Code review. Identifying potential errors before running the code can save us all a lot of time. "Can you look over this function to see if I'm implementing the algorithm correctly?"
+- Debugging. LLMs can be great for finding bugs. Finding clues in code or log files can be tedious, and LLMs can do it very quickly.
+- Unit tests. Unit tests can be tedious, and it's great to have an LLM do the work.
+- Mechanical refactoring. For example, finding and replacing all the calls to a function when its name is changed, breaking up a file into smaller parts, or combining two duplicate functions.
+- API or architecture documentation. For functional documentation, like defining the fields in a Parquet file, or the classes in a module.
+
+### Bad uses of AI
+
+- Writing production code. Ideally, the production code that actually runs is typed by the students directly.
+- Agentic coding. "Do this task for me".
+- Filler text. Making long documents that sound like they are saying something, while saying nothing.
+
+## Directories
+
+- pub-crawler/ - the crawler that collects data for this project
+
+## pub-crawler-chart
+
+- The [Helm](https://helm.sh/) chart for deploying this project.
+
+## pub-crawler-data-analysis
+
+- The scripts we use to analyse the data from the crawl.
+
+## Process
+
+We use our GitHub repo to track tasks as issues.
+
+## Documentation
+
+We keep documention as Markdown files, with [Mermaid](https://mermaid.js.org/) diagrams, in the ./docs/ directory of each sub-project.
