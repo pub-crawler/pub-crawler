@@ -69,6 +69,11 @@ classDiagram
         +finish()
         +abort()
     }
+    class Worker {
+        <<coroutine>>
+        +str name
+        +run()
+    }
     class Dispatcher {
         +set_handler(job_type, handler)
         +dispatch(job)
@@ -135,6 +140,8 @@ classDiagram
     }
 
     Crawler o-- Dispatcher
+    Crawler "1" o-- "max_workers" Worker : spawns
+    Worker --> Dispatcher : get / dispatch / done
     Dispatcher "1" o-- "*" Handler : registry by job_type
     Handler <|-- WebfingerHandler
     Handler <|-- ActorHandler
