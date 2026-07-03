@@ -10,9 +10,9 @@ Our work with LLMs here is governed by the [Georgia Tech Academic Honor Code](ht
 
 We are expected to write our own code, and disclose when and where we use AI, to each other, to the instructors, and to readers of our paper. If we don't feel comfortable disclosing the AI use, that's a good sign that we shouldn't do it.
 
-This is a group project, so one person using AI outside the bounds of the Honor Code puts everyone's grade and reputation at risk.
+This is a group project, so one person using AI outside the bounds of the Honor Code puts everyone's grade and academic reputation at risk.
 
-We are also working on a shared project. Reading and modifying LLM-generated code can be tiresome, especially if there's a lot of it. It's nice to each other to keep things tight and manageable.
+We are also working on a shared project. Reading and modifying lots of LLM-generated code can be tiresome, especially if there's a lot of it. It's nice to each other to keep things tight and manageable.
 
 ### Good uses of AI
 
@@ -46,6 +46,26 @@ We are also working on a shared project. Reading and modifying LLM-generated cod
 
 We use our GitHub repo to track tasks as issues.
 
+We prefer [test-driven development](https://en.wikipedia.org/wiki/Test-driven_development).
+
+- We write unit tests to define API surface and behaviour
+- Make sure tests fail (red)
+- Implement the feature
+- Make sure tests succeed (green)
+- Run full unit test suite to make sure the implementation didn't cause regressions.
+
 ## Documentation
 
 We keep documention as Markdown files, with [Mermaid](https://mermaid.js.org/) diagrams, in the ./docs/ directory of each sub-project.
+
+We keep a changelog in [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
+
+## Python
+
+We use [uv](https://docs.astral.sh/uv/) for package management and building the code.
+
+## Git
+
+We use [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) for commit messages.
+
+We use [Semantic Versioning](https://semver.org/spec/v2.0.0.html) to track versions of the code. Each sub-project is tracked separately.
