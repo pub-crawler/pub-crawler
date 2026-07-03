@@ -1,0 +1,17 @@
+apiVersion: v2
+name: pub-crawler
+description: Fediverse follower/following graph crawler — crawls signed ActivityPub GETs into a Postgres graph, queued through Redis.
+type: application
+
+# Chart version — bump on chart changes, independent of the app image.
+version: 0.8.0
+
+# Default application image tag (overridable via image.tag).
+appVersion: "0.8.0"
+
+home: https://crawler.pub
+sources:
+  - https://github.com/pub-crawler/pub-crawler
+maintainers:
+  - name: Evan Prodromou
+    email: evanp@gatech.edu

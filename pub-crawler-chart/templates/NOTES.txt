@@ -1,0 +1,23 @@
+pub-crawler {{ .Chart.AppVersion }} installed as release "{{ .Release.Name }}".
+
+What just happened (in order):
+  1. pre-install/upgrade hook: schema migrations  (run_migrations.py){{ if not .Values.migrations.enabled }}  [DISABLED]{{ end }}
+  2. pre-install/upgrade hook: seed the queue      (add_seeds.py){{ if not .Values.seed.enabled }}  [DISABLED]{{ end }}
+  3. crawl Job: {{ include "pub-crawler.fullname" . }}-crawler-{{ .Release.Revision }}  (drains the queue, then Completes)
+{{- if .Values.snapshot.enabled }}
+  4. snapshot CronJob "{{ .Values.snapshot.schedule }}" -> {{ .Values.persistence.mountPath }}/snapshot-<date>-{nodes,edges}.parquet
+{{- end }}
+
+Watch the crawl:
+  kubectl -n {{ .Release.Namespace }} logs -f job/{{ include "pub-crawler.fullname" . }}-crawler-{{ .Release.Revision }}
+
+Re-run a crawl later (re-seeds + crawls again):
+  helm upgrade {{ .Release.Name }} <chart> -n {{ .Release.Namespace }} [your -f / --set-file flags]
+
+{{- if not .Values.database.url }}
+
+WARNING: database.url is unset — the install would have failed. Set it (postgresql://...).
+{{- end }}
+{{- if not .Values.redis.url }}
+WARNING: redis.url is unset — set it (redis://...).
+{{- end }}

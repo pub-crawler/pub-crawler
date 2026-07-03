@@ -1,0 +1,181 @@
+# Default values for pub-crawler.
+
+image:
+  repository: evanp/pub-crawler
+  # Defaults to .Chart.AppVersion when empty.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# Connection strings for your EXISTING in-cluster Postgres and Redis.
+# These include credentials, so they are stored in a Secret.
+database:
+  url: ""   # e.g. postgresql://user:pass@postgres.default.svc:5432/pubcrawler
+redis:
+  url: ""   # e.g. redis://redis.default.svc:6379/0
+
+# Non-secret crawler configuration (rendered into a ConfigMap).
+crawler:
+  keyId: "https://crawler.pub/actor#main-key"
+  maxDepth: 1
+  maxWorkers: 25
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+
+# Private signing key. Rendered into the Secret and mounted as a file at
+# mountPath; PRIVATE_KEY_PEM points the app at that path.
+# KEEP pem OUT OF GIT — supply at install time, e.g.:
+#   helm install ... --set-file privateKey.pem=private.pem
+privateKey:
+  pem: ""
+  mountPath: /etc/pub-crawler/private.pem
+
+# Seeding: add_seeds.py enqueues webfinger addresses (one per line) into Redis.
+# Runs as a pre-install/pre-upgrade hook so the queue is primed before the crawl.
+seed:
+  enabled: true
+  # Webfinger addresses, one per line. For large lists prefer:
+  #   helm install ... --set-file seed.list=seeds.txt
+  list: ""
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 128Mi
+
+# Schema migrations: run_migrations.py as a pre-install/pre-upgrade hook.
+migrations:
+  enabled: true
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 128Mi
+
+# Queue fixup: fixup_queue.py rewrites legacy `counter:job` queue members into
+# the `ts|job` format. Runs as a pre-install/pre-upgrade hook AFTER migrations
+# and BEFORE seeding (hook-weight -7, between -10 and -5). Idempotent — a no-op
+# once the queue is converted. Disabled by default now that the cluster's
+# migrated; `--set fixupQueue.enabled=true` if an unconverted cluster needs it.
+fixupQueue:
+  enabled: false
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 128Mi
+
+# Seen-set fixup: fixup_seen.py rebuilds the SEEN de-dup set from durable state
+# (in-flight + failed + queued jobs, plus fetched actors in the graph) and dedupes
+# the existing queue. Pre-install/pre-upgrade hook AFTER fixupQueue (it parses the
+# `ts|job` members fixupQueue produces) and BEFORE seeding (hook-weight -6, between
+# -7 and -5). Needs BOTH Redis and Postgres.
+#
+# WARNING — unlike fixupQueue this is NOT a cheap no-op on re-run: it DELETEs SEEN
+# and rebuilds + re-dedupes the entire queue (ZREM-ing duplicates) every time it
+# runs, which on a large queue is minutes of work and re-runs on every upgrade
+# while enabled. So it's DISABLED by default — it's a one-shot migration. Only
+# `--set fixupSeen.enabled=true`, with the crawler STOPPED, to bring de-dup to a
+# cluster that predates it (or to rebuild SEEN if it's ever lost). It deletes SEEN
+# and removes queue members, so — like fixupQueue — the chart can't enforce the
+# crawler-stopped precondition; stop the running crawler Job before upgrading.
+fixupSeen:
+  enabled: false
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 128Mi
+
+# Queue priority migration: prioritise_queue_by_depth_and_job_type.py rewrites
+# existing `ts|job` queue members into the `depth|type|ts|job` form the new
+# dispatcher sorts on (shallower depth and earlier job types first). Pre-upgrade
+# hook at weight -4 (after the other fixups/seeding, last before the crawler).
+# Redis-only; idempotent (already-converted members are skipped). DISABLED by
+# default -- it's a one-shot for the depth/type-sorting upgrade. `--set
+# prioritiseQueue.enabled=true`, with the crawler STOPPED (it rewrites queue
+# members in place), on the deploy that introduces the new sort.
+prioritiseQueue:
+  enabled: false
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 128Mi
+
+# The crawl itself — a run-to-completion Job (re-created each helm revision).
+job:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400  # auto-delete finished crawl Jobs after a day
+
+# Snapshot: snapshot.py writes a dated GML to the persistence volume on a schedule.
+snapshot:
+  enabled: true
+  schedule: "0 3 * * *"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+# Crest-watch: every 30 min, append one queue-size / front-lag / memory sample to
+# crest-watch.log on the persistence volume — in-cluster monitoring that survives
+# laptop sleep (unlike a local watch loop). Shares the snapshots PVC (RWO); a sample
+# that collides with the daily snapshot is skipped, not queued.
+crestWatch:
+  enabled: true
+  schedule: "*/30 * * * *"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+# Persistent volume for snapshot GML output.
+persistence:
+  enabled: true
+  size: 5Gi
+  storageClass: ""
+  accessMode: ReadWriteOnce
+  mountPath: /data
+
+# Pod-level security context. The image runs as uid 10001; fsGroup makes the
+# snapshot PVC writable by that user.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+
+# Container-level security context.
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

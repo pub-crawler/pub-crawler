@@ -1,0 +1,58 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  # Revision-suffixed so each helm upgrade launches a fresh crawl (Jobs are
+  # immutable; a stable name would block re-runs).
+  name: {{ include "pub-crawler.fullname" . }}-crawler-{{ .Release.Revision }}
+  labels:
+    {{- include "pub-crawler.labels" . | nindent 4 }}
+    app.kubernetes.io/component: crawler
+spec:
+  backoffLimit: {{ .Values.job.backoffLimit }}
+  ttlSecondsAfterFinished: {{ .Values.job.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      labels:
+        {{- include "pub-crawler.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: crawler
+    spec:
+      restartPolicy: Never
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: crawler
+          image: {{ include "pub-crawler.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # Default image CMD is `python bin/crawl.py`.
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "pub-crawler.fullname" . }}-config
+          env:
+            {{- include "pub-crawler.dbEnv" . | nindent 12 }}
+            {{- include "pub-crawler.redisEnv" . | nindent 12 }}
+          volumeMounts:
+            {{- include "pub-crawler.keyVolumeMount" . | nindent 12 }}
+          {{- with .Values.crawler.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        {{- include "pub-crawler.keyVolume" . | nindent 8 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

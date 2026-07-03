@@ -1,0 +1,60 @@
+{{- if .Values.snapshot.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "pub-crawler.fullname" . }}-snapshot
+  labels:
+    {{- include "pub-crawler.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.snapshot.schedule | quote }}
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      backoffLimit: {{ .Values.job.backoffLimit }}
+      template:
+        metadata:
+          labels:
+            {{- include "pub-crawler.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: snapshot
+        spec:
+          restartPolicy: Never
+          {{- with .Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          securityContext:
+            {{- toYaml .Values.podSecurityContext | nindent 12 }}
+          containers:
+            - name: snapshot
+              image: {{ include "pub-crawler.image" . }}
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              command:
+                - sh
+                - -c
+                # Capture the dated stamp once so the nodes and edges files share
+                # the same timestamp even if the clock ticks between evaluations.
+                - |
+                  ts=$(date +%F-%H%M%S)
+                  nodes={{ .Values.persistence.mountPath }}/snapshot-$ts-nodes.parquet
+                  edges={{ .Values.persistence.mountPath }}/snapshot-$ts-edges.parquet
+                  python bin/snapshot.py "$nodes" "$edges"
+              securityContext:
+                {{- toYaml .Values.securityContext | nindent 16 }}
+              env:
+                {{- include "pub-crawler.dbEnv" . | nindent 16 }}
+              volumeMounts:
+                - name: data
+                  mountPath: {{ .Values.persistence.mountPath }}
+              {{- with .Values.snapshot.resources }}
+              resources:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+          volumes:
+            - name: data
+              {{- if .Values.persistence.enabled }}
+              persistentVolumeClaim:
+                claimName: {{ include "pub-crawler.fullname" . }}-snapshots
+              {{- else }}
+              emptyDir: {}
+              {{- end }}
+{{- end }}

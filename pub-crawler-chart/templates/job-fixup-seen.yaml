@@ -1,0 +1,54 @@
+{{- if .Values.fixupSeen.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "pub-crawler.fullname" . }}-fixup-seen
+  labels:
+    {{- include "pub-crawler.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    # After fixupQueue (-7), whose `ts|job` members this parses; before seed (-5).
+    "helm.sh/hook-weight": "-6"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: {{ .Values.job.backoffLimit }}
+  template:
+    metadata:
+      labels:
+        {{- include "pub-crawler.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: fixup-seen
+    spec:
+      restartPolicy: Never
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: fixup-seen
+          image: {{ include "pub-crawler.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["python", "fixup/fixup_seen.py"]
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          env:
+            {{- include "pub-crawler.dbEnv" . | nindent 12 }}
+            {{- include "pub-crawler.redisEnv" . | nindent 12 }}
+          {{- with .Values.fixupSeen.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

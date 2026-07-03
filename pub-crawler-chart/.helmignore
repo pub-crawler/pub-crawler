@@ -1,0 +1,16 @@
+# Patterns to ignore when building Helm packages.
+.DS_Store
+.git/
+.gitignore
+*.tmproj
+*.bak
+*.swp
+*.orig
+.idea/
+.vscode/
+# Never package real secrets / env overrides that sit beside the chart.
+# (values.*.yaml matches values.ovh.yaml etc. but NOT the default values.yaml.)
+secrets*.yaml
+*-secrets.yaml
+values.*.yaml
+private.pem
