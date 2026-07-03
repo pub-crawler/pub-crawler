@@ -3,11 +3,17 @@ import asyncio
 import uvloop
 from pub_crawler.webfinger_client import WebfingerClient
 from pub_crawler.fixed_window_counter import FixedWindowCounter
+from pub_crawler.throttle import (
+    BURST_LIMIT,
+    BURST_WINDOW,
+    GENERAL_LIMIT,
+    GENERAL_WINDOW,
+)
 
 
 async def discover_webfingers(input_filename, output_filename, *, transport=None):
-    general = FixedWindowCounter(300, 5 * 60 * 1000)
-    burst = FixedWindowCounter(10, 10 * 1000)
+    general = FixedWindowCounter(GENERAL_LIMIT, GENERAL_WINDOW)
+    burst = FixedWindowCounter(BURST_LIMIT, BURST_WINDOW)
     wfc = WebfingerClient(general, burst, transport=transport)
 
     try:
@@ -20,9 +26,9 @@ async def discover_webfingers(input_filename, output_filename, *, transport=None
                     if not wf:
                         continue
                     try:
-                      id = await wfc.get_actor_id(wf)
-                      if id:
-                          g.write(wf + "," + id + "\n")
+                        id = await wfc.get_actor_id(wf)
+                        if id:
+                            g.write(wf + "," + id + "\n")
                     except Exception as e:
                         print(wf, ": ", e)
                         continue

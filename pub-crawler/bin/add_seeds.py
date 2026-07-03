@@ -6,11 +6,17 @@ from pub_crawler.dispatcher import Dispatcher
 from pub_crawler.webfinger_client import WebfingerClient
 from pub_crawler.webfinger_handler import WebfingerHandler
 from pub_crawler.fixed_window_counter import FixedWindowCounter
+from pub_crawler.throttle import (
+    BURST_LIMIT,
+    BURST_WINDOW,
+    GENERAL_LIMIT,
+    GENERAL_WINDOW,
+)
 
 
 async def add_seeds(input_filename, r, *, transport=None):
-    general = FixedWindowCounter(300, 5 * 60 * 1000)
-    burst = FixedWindowCounter(10, 10 * 1000)
+    general = FixedWindowCounter(GENERAL_LIMIT, GENERAL_WINDOW)
+    burst = FixedWindowCounter(BURST_LIMIT, BURST_WINDOW)
     wfc = WebfingerClient(general, burst, transport=transport)
     dispatcher = Dispatcher(r)
     dispatcher.set_handler("webfinger", WebfingerHandler(wfc, dispatcher, None))

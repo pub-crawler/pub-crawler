@@ -8,6 +8,14 @@ from pub_crawler.activity_pub_client import ActivityPubClient
 from pub_crawler.actor_handler import ActorHandler
 from pub_crawler.database import database_setup
 from pub_crawler.database_graph import DatabaseGraph
+from pub_crawler.throttle import (
+    BURST_LIMIT,
+    BURST_WINDOW,
+    GENERAL_LIMIT,
+    GENERAL_WINDOW,
+    PAGE_LIMIT,
+    PAGE_WINDOW,
+)
 import anyio
 import asyncpg
 
@@ -16,17 +24,11 @@ DEFAULT_PRIVATE_KEY_PEM_FILENAME = "private.pem"
 
 
 async def add_seeds_by_actor_id(
-    input_filename,
-    r,
-    G,
-    *,
-    key_id=DEFAULT_KEY_ID,
-    private_key_pem_data,
-    transport=None
+    input_filename, r, G, *, key_id=DEFAULT_KEY_ID, private_key_pem_data, transport=None
 ):
-    general = FixedWindowCounter(300, 5 * 60 * 1000)
-    paged = FixedWindowCounter(300, 15 * 60 * 1000)
-    burst = FixedWindowCounter(10, 10 * 1000)
+    general = FixedWindowCounter(GENERAL_LIMIT, GENERAL_WINDOW)
+    paged = FixedWindowCounter(PAGE_LIMIT, PAGE_WINDOW)
+    burst = FixedWindowCounter(BURST_LIMIT, BURST_WINDOW)
     ac = ActivityPubClient(
         key_id,
         private_key_pem_data,

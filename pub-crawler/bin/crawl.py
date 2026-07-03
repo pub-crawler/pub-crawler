@@ -10,6 +10,14 @@ from pub_crawler.dispatcher import Dispatcher
 from pub_crawler.database import database_setup
 from pub_crawler.database_graph import DatabaseGraph
 from pub_crawler.crawler import Crawler
+from pub_crawler.throttle import (
+    BURST_LIMIT,
+    BURST_WINDOW,
+    GENERAL_LIMIT,
+    GENERAL_WINDOW,
+    PAGE_LIMIT,
+    PAGE_WINDOW,
+)
 import asyncio
 import uvloop
 import redis.asyncio
@@ -32,9 +40,9 @@ def make_dispatcher(
     max_depth=DEFAULT_MAX_DEPTH,
     max_workers=DEFAULT_MAX_WORKERS,
 ):
-    general = FixedWindowCounter(300, 5 * 60 * 1000)
-    paged = FixedWindowCounter(300, 15 * 60 * 1000)
-    burst = FixedWindowCounter(10, 10 * 1000)
+    general = FixedWindowCounter(GENERAL_LIMIT, GENERAL_WINDOW)
+    paged = FixedWindowCounter(PAGE_LIMIT, PAGE_WINDOW)
+    burst = FixedWindowCounter(BURST_LIMIT, BURST_WINDOW)
     wfc = WebfingerClient(general, burst, transport=transport, max_workers=max_workers)
     ac = ActivityPubClient(
         key_id,
