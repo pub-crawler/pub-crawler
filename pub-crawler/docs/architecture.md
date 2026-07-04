@@ -57,8 +57,6 @@ flowchart LR
     fediuser --- restrictProfile
 ```
 
-## Process
-
 ## Logical
 
 ```mermaid
@@ -229,6 +227,8 @@ classDiagram
     DatabaseGraph ..> Node : persists
     DatabaseGraph ..> Edge : persists
 ```
+
+## Process
 
 ## Development
 
