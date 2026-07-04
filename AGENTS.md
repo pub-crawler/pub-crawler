@@ -62,8 +62,6 @@ Other directories:
 
 The [Helm](https://helm.sh/) chart for deploying this project.
 
-The snapshot download mechanism is to start a new pod in the pub-crawler namespace with the pub-crawler-snapshots pvc loaded. Use kubectl exec to list the files in the mount directory; the last one should be the most recent. There is one parquet file for nodes and another for edges. Then, use kubectl cp to download the latest file to the data directory.
-
 ### pub-crawler-data-analysis
 
 - The scripts we use to analyse the data from the crawl.
@@ -145,3 +143,28 @@ IFTAS keeps a list of "Do Not Interact" (DNI) servers, which are the worst of th
 Even the domain names of these servers can be upsettings -- they can have racist, homophobic or misogynistic slurs, references to violence, sexual assault.
 
 Agents should take care when talking about the "bad actors" to get positive opt-in from the user, and avoid traumatising the user casually.
+
+## Snapshots
+
+The crawler writes daily snapshots of the graph to the `pub-crawler-snapshots`
+PersistentVolumeClaim in the `pub-crawler` namespace, via the
+`pub-crawler-snapshot` CronJob (~03:00 UTC). The volume mounts at `/data`, and
+each run produces two Parquet files:
+
+- `snapshot-<YYYY-MM-DD>-<HHMMSS>-nodes.parquet`
+- `snapshot-<YYYY-MM-DD>-<HHMMSS>-edges.parquet`
+
+To download the latest snapshot into `pub-crawler-data-analysis/data/`:
+
+1. Start a throwaway pod in the `pub-crawler` namespace mounting the
+   `pub-crawler-snapshots` PVC **read-only**. The PVC is ReadWriteOnce, so pin
+   the pod (`nodeName`) to the node where the volume is already attached.
+2. `kubectl exec` into the pod and `ls /data`; the last node/edge pair is the
+   most recent.
+3. `kubectl cp` the two files down.
+
+Caveat: `kubectl cp` can **silently truncate** large files (the ~800 MB edges
+file) near the end and still exit 0 — it hits an exec-stream duration limit, not
+a size cap. Verify every transfer with `shasum -a 256` against the file in the
+pod. If it's short, split the file into ~100 MB chunks in the pod's `/tmp`, copy
+each, and reassemble locally.
