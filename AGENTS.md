@@ -40,7 +40,23 @@ We are also working on a shared project. Reading and modifying lots of LLM-gener
 
 ### pub-crawler/
 
-The crawler that collects data for this project.
+The crawler that collects data for this project. It is a long-running Python script that fetches ActivityPub actors and their followers/following collections from the Web and stores them as a graph in a Postgres database. It runs many parallel workers (25 by default), each of which pops jobs off a Redis job queue, executes the job, and then possibly generates more jobs based on the data.
+
+The jobs are:
+
+- Webfinger: turns a Webfinger address into an ActivityPub actor id, adds an actor job
+- Actor: gets data for an Actor, and adds two Collection jobs (following and followers)
+- Collection: gets collection total information, and adds a Page job for the first page
+- Page: Reads a page of data from a collection (following or followers), and makes edges between the owner and each actor in the page. Queues an Actor job for any actor in the page that hasn't been seen before, and queues a page job for the next page if one exists.
+
+There is a [high-level architecture](./pub-crawler/docs/architecture.md), a [database schema](./pub-crawler/docs/database_schema.md), and information about the [graph object](./pub-crawler/docs/graph.md).
+
+Other directories:
+
+- [test suite](./pub-crawler/tests/) which can be run with or without a live Postgres server.
+- [pub_crawler](./pub-crawler/pub_crawler/) library of classes and modules
+- [bin](./pub-crawler/bin/) scripts for running the crawler
+- [fixup](./pub-crawler/fixup/) one-time scripts for changing the queue structure (usually not needed)
 
 ### pub-crawler-chart
 
