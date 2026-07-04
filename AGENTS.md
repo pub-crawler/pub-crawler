@@ -168,3 +168,11 @@ file) near the end and still exit 0 — it hits an exec-stream duration limit, n
 a size cap. Verify every transfer with `shasum -a 256` against the file in the
 pod. If it's short, split the file into ~100 MB chunks in the pod's `/tmp`, copy
 each, and reassemble locally.
+
+The snapshots are large (~1Gb data total) and loading the parquet files in igraph can take 5-10 minutes. When writing code, it can be easier to work with a snowball sample of the data.
+
+You can make a new sample by running parquet_snowball_sample.py with the two input parquet files, a webfinger id, and the two output files on the command line. It's a mess but hopefully you don't have to do it too often!
+
+The webfingers.csv file has the seed set, so you can just grab one of those.
+
+Some properties of the graph may be similar from the sample to the snapshot, but for any reported results, we can only run the code against the snapshots. So, test your code on the samples, and then start the code on the whole snapshot, then go get a cup of coffee and read something, because it will take a while to finish.
