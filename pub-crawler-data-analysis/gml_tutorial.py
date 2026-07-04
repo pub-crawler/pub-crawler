@@ -4,6 +4,22 @@ from itertools import islice
 import time
 import math
 
+"""
+gml_tutorial.py
+
+Exploratory utilities for learning the igraph API and inspecting
+Fediverse GML datasets.
+
+This file was developed as a learning exercise while refamiliarizing
+myself with network analysis in Python. AI-assisted discussion was used for 
+reference, debugging, API exploration, implementation discussion, and code 
+review during development. All incorporated code was reviewed, tested, and 
+understood by the author during the learning process.
+
+This module is intended for exploratory learning and dataset inspection.
+It is not intended to be part of the final production analysis pipeline.
+"""
+
 #------------------------------------------------------------
 # LOAD GML UTIL FUNCTIONS
 #------------------------------------------------------------
