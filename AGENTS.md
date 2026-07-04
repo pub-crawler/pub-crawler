@@ -60,7 +60,9 @@ Other directories:
 
 ### pub-crawler-chart
 
-- The [Helm](https://helm.sh/) chart for deploying this project.
+The [Helm](https://helm.sh/) chart for deploying this project.
+
+The snapshot download mechanism is to start a new pod in the pub-crawler namespace with the pub-crawler-snapshots pvc loaded. Use kubectl exec to list the files in the mount directory; the last one should be the most recent. There is one parquet file for nodes and another for edges. Then, use kubectl cp to download the latest file to the data directory.
 
 ### pub-crawler-data-analysis
 
