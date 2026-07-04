@@ -1,8 +1,7 @@
-import pandas
-import igraph
 import logging
 import powerlaw
 
+from load_graph import load_graph
 
 def fit_degrees_to_power_law(G):
     logging.info("Getting in-degree values")
@@ -22,15 +21,7 @@ def fit_degrees_to_power_law(G):
 
 
 def fit_degrees_to_power_law_files(nodes_filename, edges_filename):
-    logging.info(f"Reading nodes file {nodes_filename}")
-    nodes_df = pandas.read_parquet(nodes_filename)
-    nodes_df.drop(columns=['name'], inplace=True)
-    logging.info(f"Reading edges file {edges_filename}")
-    edges_df = pandas.read_parquet(edges_filename)
-    logging.info("Initializing graph")
-    G = igraph.Graph.DataFrame(
-        edges_df, vertices=nodes_df, directed=True, use_vids=False
-    )
+    G = load_graph(nodes_filename, edges_filename)
     logging.info("fitting to power law")
     fits = fit_degrees_to_power_law(G)
     logging.info("fit complete")
