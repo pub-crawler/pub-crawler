@@ -176,3 +176,20 @@ You can make a new sample by running parquet_snowball_sample.py with the two inp
 The webfingers.csv file has the seed set, so you can just grab one of those.
 
 Some properties of the graph may be similar from the sample to the snapshot, but for any reported results, we can only run the code against the snapshots. So, test your code on the samples, and then start the code on the whole snapshot, then go get a cup of coffee and read something, because it will take a while to finish.
+
+## Queries
+
+It's possible to query the live status of the crawler by running queries against the Redis server or the Postgres server.
+
+The best way to do this is to start a new pod in the Kubernetes cluster. Pass the DATABASE_URL or REDIS_URL values for the database connections. The default cluster uses hosted services from OVH, so
+the servers aren't running in the K8S clusters themselves.
+
+For a query, write a script to pass to redis-cli or psql. Or, you can write one-off Python scripts.
+
+Avoid running query code in the crawler pod itself; especially for big queries, this can cause the pod to run out of memory and get recycled.
+
+The Postgres database migration files are in [database.py](./pub-crawler/pub_crawler/database.py).
+
+The Redis data structures are in [dispatcher.py](./pub-crawler/pub_crawler/dispatcher.py). There is a queue at "pub_crawler:queue", inflight job list at "pub_crawler:inflight", failed job list at "pub_crawler:failed", and a seen job list at "pub_crawler:seen".
+
+The data structures have millions of rows. Use server-side cursors where possible, or in Redis, use *scan_iter functions.
