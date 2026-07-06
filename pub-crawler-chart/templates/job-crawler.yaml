@@ -8,6 +8,10 @@ metadata:
     {{- include "pub-crawler.labels" . | nindent 4 }}
     app.kubernetes.io/component: crawler
 spec:
+  # completions stays unset, so with parallelism > 1 this is a "work queue" Job:
+  # pods coordinate through the shared Redis queue, and the Job completes once
+  # any pod exits successfully.
+  parallelism: {{ .Values.job.parallelism }}
   backoffLimit: {{ .Values.job.backoffLimit }}
   ttlSecondsAfterFinished: {{ .Values.job.ttlSecondsAfterFinished }}
   template:

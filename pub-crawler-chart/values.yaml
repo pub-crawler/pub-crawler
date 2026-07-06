@@ -123,6 +123,13 @@ prioritiseQueue:
 
 # The crawl itself — a run-to-completion Job (re-created each helm revision).
 job:
+  # Concurrent crawler pods. Safe to raise: pods coordinate through the shared
+  # Redis queue and Postgres dedup. To give each pod its own egress IP, pair
+  # with a required podAntiAffinity (see `affinity` below) so no two pods share
+  # a node — on clusters where pods SNAT to the node's public IP, one pod per
+  # node means one IP per pod. backoffLimit counts pod failures across ALL
+  # pods, so scale it with parallelism.
+  parallelism: 1
   backoffLimit: 0
   ttlSecondsAfterFinished: 86400  # auto-delete finished crawl Jobs after a day
 
