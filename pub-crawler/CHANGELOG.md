@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Don't walk a collection with zero total items, even if there is a `first` property.
+
 ## [0.8.0] - 2026-06-27
 
 ### Changed
