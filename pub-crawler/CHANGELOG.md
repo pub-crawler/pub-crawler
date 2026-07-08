@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Don't walk a collection with zero total items, even if there is a `first` property.
+- Don't walk the next page in a chain if the current page has no items.
 
 ## [0.8.0] - 2026-06-27
 
