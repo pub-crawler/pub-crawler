@@ -60,7 +60,6 @@ class PageHandler(Handler):
             else:
                 props[f"{direction}_pages_complete"] = True
 
-
         await self.graph.set_node_properties(owner_id, props)
 
     def next_available(self, job):
