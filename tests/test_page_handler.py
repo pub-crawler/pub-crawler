@@ -17,8 +17,11 @@ Assumed contract (flag if different):
         m = member if str else member['id']
         followers: add edge m -> owner_id ; following: add edge owner_id -> m
         enqueue {job_type:'actor', actor_id:m, depth: job.depth + 1}
-    if page.next:
+    if page.next AND this page had members:
         enqueue {job_type:'page', page_id:next, owner_id, direction, depth: job.depth}
+    (An empty page ends the chain even when it offers a `next` — WriteFreely-style
+    servers paginate empty collections forever, so `next` on an empty page is not
+    to be trusted.)
 """
 
 import httpx
@@ -237,10 +240,12 @@ async def test_no_next_means_no_page_job():
     assert page_jobs == []
 
 
-async def test_filtered_page_with_next_but_no_items_still_pages_on():
-    # An AP server filtering its member list can return a page with `next` but no
-    # items. We still record the page and walk to `next`; there's just no member
-    # work to do.
+async def test_empty_page_with_next_ends_the_chain():
+    # WriteFreely-family servers paginate empty collections forever: every page
+    # offers a `next` and no items. An empty page therefore ENDS the chain — the
+    # `next` link on it is not to be trusted. (The cost: a server that filters an
+    # entire page's members mid-collection loses its tail; followers/following
+    # pages don't do that in practice.)
     client = FakeActivityPubClient(doc=page_doc([], next_id=NEXT_ID))
     dis = FakeDispatcher()
     graph = FakeGraph()
@@ -248,18 +253,41 @@ async def test_filtered_page_with_next_but_no_items_still_pages_on():
 
     await PageHandler(client, dis, graph).handle(input_job())
 
-    # Owner-side recorded and the next page enqueued...
+    # The page itself is recorded as visited...
     assert await graph.get_node_property(OWNER_ID, f"{DIRECTION}_last_page") == PAGE_ID
     assert (
         await graph.get_node_property(OWNER_ID, f"{DIRECTION}_last_page_http_status")
         == 200
     )
-    assert [j for j in dis.enqueued if j["job_type"] == "page"] == [
-        next_page_job(NEXT_ID)
-    ]
-    # ...but no member work.
-    assert [j for j in dis.enqueued if j["job_type"] == "actor"] == []
+    # ...but nothing is enqueued: no members, no next page.
+    assert dis.enqueued == []
     assert [e async for e in graph.all_edges()] == []
+    # Ending on an empty page IS completing the walk: zero members, fully known.
+    assert (
+        await graph.get_node_property(OWNER_ID, f"{DIRECTION}_pages_complete") is True
+    )
+
+
+async def test_empty_page_without_an_items_key_ends_the_chain():
+    # The literal WriteFreely shape: totalItems: 0, a `next`, and NO items key at
+    # all. A missing member list is as empty as an empty one — chain over.
+    doc = {
+        "id": PAGE_ID,
+        "type": "OrderedCollectionPage",
+        "totalItems": 0,
+        "next": NEXT_ID,
+    }
+    client = FakeActivityPubClient(doc=doc)
+    dis = FakeDispatcher()
+    graph = FakeGraph()
+    await graph.ensure_node(OWNER_ID)
+
+    await PageHandler(client, dis, graph).handle(input_job())
+
+    assert dis.enqueued == []
+    assert (
+        await graph.get_node_property(OWNER_ID, f"{DIRECTION}_pages_complete") is True
+    )
 
 
 async def test_enqueues_a_page_job_for_an_embedded_next_page_object():
