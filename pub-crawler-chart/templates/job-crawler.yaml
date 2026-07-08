@@ -56,7 +56,12 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.affinity }}
+      {{- /* crawler.affinity is crawler-pod-only (e.g. the one-pod-per-node
+           anti-affinity for per-node egress IPs); it must NOT go in the shared
+           .Values.affinity, which every hook Job also renders — a required
+           crawler anti-affinity there leaves hooks unschedulable once crawler
+           pods occupy all nodes. Falls back to the shared value. */}}
+      {{- with (default .Values.affinity .Values.crawler.affinity) }}
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}

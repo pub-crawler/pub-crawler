@@ -29,6 +29,12 @@ crawler:
     limits:
       cpu: 1000m
       memory: 512Mi
+  # Affinity for CRAWLER pods only (hook Jobs are unaffected). Use this — not
+  # the shared `affinity` below — for the required one-pod-per-node
+  # anti-affinity that gives each crawler pod its own egress IP; on the shared
+  # value it would also bind the migrate/seed hooks, which then can't schedule
+  # once crawler pods occupy every node. Falls back to `affinity` when empty.
+  affinity: {}
 
 # Private signing key. Rendered into the Secret and mounted as a file at
 # mountPath; PRIVATE_KEY_PEM points the app at that path.
@@ -125,10 +131,10 @@ prioritiseQueue:
 job:
   # Concurrent crawler pods. Safe to raise: pods coordinate through the shared
   # Redis queue and Postgres dedup. To give each pod its own egress IP, pair
-  # with a required podAntiAffinity (see `affinity` below) so no two pods share
-  # a node — on clusters where pods SNAT to the node's public IP, one pod per
-  # node means one IP per pod. backoffLimit counts pod failures across ALL
-  # pods, so scale it with parallelism.
+  # with a required podAntiAffinity in `crawler.affinity` (NOT the shared
+  # `affinity`) so no two pods share a node — on clusters where pods SNAT to
+  # the node's public IP, one pod per node means one IP per pod. backoffLimit
+  # counts pod failures across ALL pods, so scale it with parallelism.
   parallelism: 1
   backoffLimit: 0
   ttlSecondsAfterFinished: 86400  # auto-delete finished crawl Jobs after a day
