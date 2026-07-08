@@ -26,11 +26,15 @@ class CollectionHandler(Handler):
 
         if f"{direction}_http_status" not in props:
             props[f"{direction}_http_status"] = 200
+            totalItems = None
             if "totalItems" in json and isinstance(json["totalItems"], int):
+                totalItems = json["totalItems"]
                 props[f"{direction}_count"] = json["totalItems"]
 
             if depth < self.max_depth:
-                if "first" in json:
+                if totalItems is not None and totalItems == 0:
+                    props[f"{direction}_members_shared"] = True
+                elif "first" in json:
                     first_id = None
                     if isinstance(json.get("first"), dict) and isinstance(
                         json["first"].get("id"), str

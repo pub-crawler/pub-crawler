@@ -261,6 +261,59 @@ async def test_does_not_enqueue_the_page_at_max_depth():
 
 
 # ---------------------------------------------------------------------------
+# totalItems: 0 with a `first` link — counted, but the page chain never starts.
+# WriteFreely-family servers advertise an empty collection yet paginate it
+# forever (every empty page carries a `next`), so following `first` on a
+# declared-empty collection opens an unterminated chain of empty page jobs.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "direction, collection_id",
+    [("followers", FOLLOWERS_ID), ("following", FOLLOWING_ID)],
+)
+async def test_does_not_enqueue_a_page_for_a_declared_empty_collection(
+    direction, collection_id
+):
+    # totalItems: 0 AND a `first` link (the WriteFreely tarpit shape).
+    client = FakeActivityPubClient(doc=collection(collection_id, total=0))
+    dis = FakeDispatcher()
+    graph = FakeGraph()
+    await graph.ensure_node(OWNER_ID)
+
+    await make_handler(client, dis, graph).handle(
+        collection_job(collection_id, direction, 0)
+    )
+
+    # The zero count is still recorded (0 is a real value, not "unknown")...
+    assert await graph.get_node_property(OWNER_ID, f"{direction}_count") == 0
+    # ...but a collection that declares itself empty is not walked.
+    assert [j for j in dis.enqueued if j["job_type"] == "page"] == []
+
+
+async def test_omitted_total_items_with_first_still_paginates():
+    # The guard fires only when totalItems is PRESENT and 0. An absent count is
+    # "unknown", and an unknown collection with a `first` link must be walked.
+    doc = {
+        "id": FOLLOWERS_ID,
+        "type": "OrderedCollection",
+        "first": f"{FOLLOWERS_ID}?page=1",
+    }
+    client = FakeActivityPubClient(doc=doc)
+    dis = FakeDispatcher()
+    graph = FakeGraph()
+    await graph.ensure_node(OWNER_ID)
+
+    await make_handler(client, dis, graph).handle(
+        collection_job(FOLLOWERS_ID, "followers", 0)
+    )
+
+    assert [j for j in dis.enqueued if j["job_type"] == "page"] == [
+        page_job(f"{FOLLOWERS_ID}?page=1", "followers", 0)
+    ]
+
+
+# ---------------------------------------------------------------------------
 # Inline / unpaged collections: members on the collection, no `first`
 # ---------------------------------------------------------------------------
 
@@ -484,9 +537,10 @@ async def test_enqueues_a_page_job_for_an_embedded_first_page_object():
 
 
 # ---------------------------------------------------------------------------
-# members_shared flag: did the actor actually expose its membership?
-#   paged (`first`) or inline (items/orderedItems) -> True
-#   neither (count only / locked account)          -> False
+# members_shared flag: do we know the membership?
+#   paged (`first`) or inline (items/orderedItems)    -> True
+#   declared empty (totalItems: 0), walked or not     -> True (vacuously known)
+#   neither, with a nonzero/unknown count (locked)    -> False
 # ---------------------------------------------------------------------------
 
 
@@ -526,6 +580,45 @@ async def test_inline_collection_marks_members_shared(direction, collection_id):
     assert (
         await graph.get_node_property(OWNER_ID, f"{direction}_members_shared") is True
     )
+
+
+@pytest.mark.parametrize(
+    "direction, collection_id",
+    [("followers", FOLLOWERS_ID), ("following", FOLLOWING_ID)],
+)
+async def test_declared_empty_paged_collection_marks_members_shared(
+    direction, collection_id
+):
+    # totalItems: 0 with a `first` link — the tarpit guard skips the walk, but
+    # the membership is fully known (it's empty), so it still counts as shared.
+    client = FakeActivityPubClient(doc=collection(collection_id, total=0))
+    dis = FakeDispatcher()
+    graph = FakeGraph()
+    await graph.ensure_node(OWNER_ID)
+
+    await make_handler(client, dis, graph).handle(
+        collection_job(collection_id, direction, 0)
+    )
+
+    assert (
+        await graph.get_node_property(OWNER_ID, f"{direction}_members_shared") is True
+    )
+
+
+async def test_declared_empty_count_only_collection_marks_members_shared():
+    # totalItems: 0 with no `first` and no inline items: nothing to enumerate
+    # and nothing withheld — the empty membership is vacuously known, so this is
+    # NOT the locked-account shape even though the doc looks like one.
+    client = FakeActivityPubClient(doc=hidden_collection(FOLLOWERS_ID, total=0))
+    dis = FakeDispatcher()
+    graph = FakeGraph()
+    await graph.ensure_node(OWNER_ID)
+
+    await make_handler(client, dis, graph).handle(
+        collection_job(FOLLOWERS_ID, "followers", 0)
+    )
+
+    assert await graph.get_node_property(OWNER_ID, "followers_members_shared") is True
 
 
 @pytest.mark.parametrize(
