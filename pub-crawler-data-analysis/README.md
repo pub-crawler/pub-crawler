@@ -37,21 +37,9 @@ Calculates the median degree of the nodes in the graph, grouped by the depth of 
 
 Finds nodes in the graph that didn't include outgoing or incoming edges, and groups them by hostname.
 
-## gml_explorer.py
-The GML Explorer currently provides the following utilities:
+### baseline_network_characterization.ipynb 
 
-- **Preview GML File** – Display the first *N* lines of a GML file without loading the entire graph into memory. Useful for inspecting the file format and available attributes.
-- **Top-Level GML Statistics** – Load a GML file and generate a high-level summary of the graph, including:
-  - Basic graph statistics (nodes, edges, density, etc.)
-  - Degree statistics
-  - Connectivity statistics
-  - Dataset metadata distributions (crawl depth, hostname, server software, HTTP status, discoverability, and indexability)
-- **Create Test GML Sample** – Generate a small GML containing the first *N* nodes of a graph for rapid development and debugging. This is intended only as a lightweight testing utility and **not** as a representative network sample.
-
-Planned additions include:
-
-- **Snowball GML Sampler** – Generate representative subgraphs by performing a breadth-first (snowball) expansion from one or more seed actors.
-- **Jupyter Notebook Analysis** – Exploratory notebooks for baseline network characterization, visualization, and graph metric analysis.
+Exploratory notebook for network characterization, visualization, and graph metric analysis.
 
 ## Contributing
 
