@@ -64,10 +64,6 @@ class Dispatcher:
                 raise Exception("Empty queue")
             _, member, score = popped
             job = self._member_to_job(member)
-            next_available = self._score_to_na(score)
-            if next_available > self.now():
-                await self._add_inflight(job)
-                return job
             handler = self._get_handler(job)
             next_available = handler.next_available(job)
             if next_available <= self.now():
