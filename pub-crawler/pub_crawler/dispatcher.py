@@ -31,6 +31,8 @@ MAX_CLIENTS = 25
 TIME_PER_JOB = 100
 MAX_INFLIGHT = 15 * 60 * 1000
 
+MAX_SPIN = 10 * 5 * MAX_CLIENTS
+
 
 class Dispatcher:
     def __init__(self, redis, now=_epoch_ms, sleep=_sleep_ms):
@@ -58,15 +60,17 @@ class Dispatcher:
         await self.redis.sadd(SEEN, id)
 
     async def get(self):
+        count = 0
         while not self._stopped:
             popped = await self.redis.bzpopmin(QUEUE)
             if not popped:
                 raise Exception("Empty queue")
+            count += 1
             _, member, score = popped
             job = self._member_to_job(member)
             handler = self._get_handler(job)
             next_available = handler.next_available(job)
-            if next_available <= self.now():
+            if next_available <= self.now() or count >= MAX_SPIN:
                 await self._add_inflight(job)
                 return job
             else:
