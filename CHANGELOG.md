@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.3] - 2026-07-11
+
+### Fixed
+
+- Put a boundary on queue spin
+
 ## [0.8.2] - 2026-07-10
 
 ### Fixed
@@ -231,7 +237,8 @@ keepalive connections in ActivityPubClient and WebfingerClient
 - Crawler max depth defaults to 1.
 - `DatabaseGraph` no longer uses its own transaction.
 
-[Unreleased]: https://github.com/pub-crawler/pub-crawler/compare/v0.8.2...HEAD
+[Unreleased]: https://github.com/pub-crawler/pub-crawler/compare/v0.8.3...HEAD
+[0.8.3]: https://github.com/pub-crawler/pub-crawler/compare/v0.8.2...v0.8.3
 [0.8.2]: https://github.com/pub-crawler/pub-crawler/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/pub-crawler/pub-crawler/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/pub-crawler/pub-crawler/compare/v0.7.1...v0.8.0
