@@ -472,6 +472,79 @@ async def test_failing_an_in_flight_job_releases_its_lease():
 
 
 # ---------------------------------------------------------------------------
+# unfail(): remove one job from the failed record, the bookkeeping half of
+# recovery (bin/recover_failed.py) -- a recovered job is re-enqueued AND taken
+# off the failed list, so a second recovery run doesn't double-enqueue it.
+# Matches by job value (same round-trip encoding fail() uses), not identity.
+# Removing is all it does: seen is untouched, and unfailing a job that isn't
+# on the list is a quiet no-op.
+# ---------------------------------------------------------------------------
+
+
+async def test_unfail_removes_the_job_from_failed():
+    dis = Dispatcher(fake_redis())
+    dis.set_handler("actor", FakeHandler())
+    job = actor_job()
+    await dis.fail(job)
+
+    await dis.unfail(job)
+
+    assert await collect_failed(dis) == []
+
+
+async def test_unfail_leaves_other_failed_jobs_alone():
+    dis = Dispatcher(fake_redis())
+    dis.set_handler("actor", FakeHandler())
+    a = {"job_type": "actor", "actor_id": "https://x.example/users/a", "depth": 1}
+    b = {"job_type": "actor", "actor_id": "https://x.example/users/b", "depth": 1}
+    await dis.fail(a)
+    await dis.fail(b)
+
+    await dis.unfail(a)
+
+    assert await collect_failed(dis) == [b]
+
+
+async def test_unfail_of_a_job_that_never_failed_is_a_noop():
+    dis = Dispatcher(fake_redis())
+    dis.set_handler("actor", FakeHandler())
+    a = actor_job()
+    await dis.fail(a)
+    b = {"job_type": "actor", "actor_id": "https://x.example/users/other", "depth": 1}
+
+    await dis.unfail(b)  # never failed; must not raise
+
+    assert await collect_failed(dis) == [a]
+
+
+async def test_unfail_matches_by_job_value_not_identity():
+    # Recovery re-reads jobs out of failed() as fresh dicts; unfail must match
+    # the stored member from an equal dict, not the original object.
+    dis = Dispatcher(fake_redis())
+    dis.set_handler("actor", FakeHandler())
+    await dis.fail(actor_job())
+
+    await dis.unfail(actor_job())
+
+    assert await collect_failed(dis) == []
+
+
+async def test_unfail_does_not_unmark_seen():
+    # Recovery unfails and re-enqueues in some order; whichever comes first,
+    # the job's seen-mark (set by its original enqueue) must survive unfail.
+    dis = Dispatcher(fake_redis())
+    dis.set_handler("actor", FakeHandler())
+    job = actor_job()
+    await dis.enqueue(job)
+    leased = await dis.get()
+    await dis.fail(leased)
+
+    await dis.unfail(leased)
+
+    assert await dis.seen(job)
+
+
+# ---------------------------------------------------------------------------
 # stop(): the circuit breaker. stop() sets a flag checked at the TOP of get();
 # a stopped dispatcher hands out no more work -- get() returns None instead, and
 # WITHOUT popping anything (queued jobs stay put for the next run). The breaker

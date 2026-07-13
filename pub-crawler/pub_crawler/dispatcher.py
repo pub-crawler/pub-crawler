@@ -112,6 +112,9 @@ class Dispatcher:
         async for member in self.redis.sscan_iter(FAILED):
             yield self._str_to_job(member)
 
+    async def unfail(self, job):
+        return await self.redis.srem(FAILED, self._job_to_str(job))
+
     def stop(self):
         self._stopped = True
 
