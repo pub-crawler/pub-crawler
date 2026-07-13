@@ -258,6 +258,15 @@ class FakeGraph:
                 to_node = self._ids[to_label]
                 yield from_node, to_node, props
 
+    async def node_property_values(self, name):
+        # Distinct values of one property across all nodes, unordered.
+        # Dedupe via a list, not a set: JSON values aren't always hashable.
+        seen = []
+        for props in self._nodes.values():
+            if name in props and props[name] not in seen:
+                seen.append(props[name])
+                yield props[name]
+
     def _next_counter(self):
         self._counter += 1
         return self._counter

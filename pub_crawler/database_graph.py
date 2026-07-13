@@ -412,6 +412,17 @@ class DatabaseGraph:
                 async for row in conn.cursor(sql):
                     yield row["from_node"], row["to_node"], orjson.loads(row["props"])
 
+    async def node_property_values(self, name: str) -> AsyncIterator[Any]:
+        async with self._pool.acquire() as conn:
+            async with conn.transaction():
+                sql = """
+                SELECT DISTINCT np.value as value
+                FROM node_property np
+                WHERE np.name = $1
+                """
+                async for row in conn.cursor(sql, name):
+                    yield orjson.loads(row["value"])
+
     async def _node_id(self, conn, label: str) -> int | None:
         if label in self._cache:
             return self._cache[label]
