@@ -15,16 +15,20 @@ The interface is async (DatabaseGraph does async DB I/O):
   (edge equivalents)
   async for node_id, label, props in all_nodes()      # int id (for GML)
   async for from_id, to_id, props in all_edges()      # int endpoint ids only
+  async for value in node_property_values(name)       # distinct values of one
+                                                      # node property, decoded
 
 Assumptions flagged for confirmation:
   - all_nodes() yields (id, label, props); all_edges() yields (from_id, to_id,
     props) — integer node ids, because that's what GML references. all_edges
     carries ONLY ids (no labels); map them back via all_nodes if you need labels.
     props is bundled so the export is one pass, not N+1.
-  - all_nodes()/all_edges() run a server-side cursor and do NOT open their own
-    transaction — the caller iterates them inside a transaction it owns (one txn
-    around both = a consistent snapshot). The db fixture's per-test rollback txn
-    supplies that here; FakeGraph ignores it.
+  - all_nodes()/all_edges()/node_property_values() run a server-side cursor
+    inside a transaction they open THEMSELVES (asyncpg cursors require one), on
+    a connection acquired from the pool per call. Consequence: two iterators
+    are two transactions, so an all_nodes + all_edges pass is NOT one consistent
+    snapshot unless the caller stops writers for the duration (snapshot.py runs
+    against a live crawler and accepts the skew).
   - get_*_property returns None for an absent property.
   - delete_node's behaviour when edges still reference it (cascade vs. error) is
     NOT pinned here — that's the FK ON DELETE policy, your call.
@@ -232,6 +236,56 @@ async def test_all_edges_yields_endpoint_ids_and_props(graph):
         seen[(id_to_label[from_id], id_to_label[to_id])] = props
 
     assert seen == {(A, B): {"direction": "followers"}, (A, C): {}}
+
+
+# ---------------------------------------------------------------------------
+# node_property_values(name): the distinct values one node property takes
+# across the whole graph, as an async iterator (streaming, like all_nodes).
+# Built for recovery's "which hostnames have we successfully fetched?" but
+# property-agnostic. Deduplicated; NO order promised; yields nothing when no
+# node carries the property; values come back decoded, same as get_node_property.
+# ---------------------------------------------------------------------------
+
+
+async def test_node_property_values_yields_each_distinct_value_once(graph):
+    for n in (A, B, C):
+        await graph.ensure_node(n)
+    await graph.set_node_property(A, "hostname", "x.example")
+    await graph.set_node_property(B, "hostname", "x.example")  # duplicate value
+    await graph.set_node_property(C, "hostname", "y.example")
+
+    values = [v async for v in graph.node_property_values("hostname")]
+
+    # Deduplicated across nodes; order not promised.
+    assert len(values) == 2
+    assert set(values) == {"x.example", "y.example"}
+
+
+async def test_node_property_values_is_empty_when_no_node_has_the_property(graph):
+    await graph.ensure_node(A)  # a bare node, as page ingestion leaves them
+    await graph.ensure_node(B)
+    await graph.set_node_property(B, "http_status", 410)  # other props don't count
+
+    assert [v async for v in graph.node_property_values("hostname")] == []
+
+
+async def test_node_property_values_only_reads_the_named_property(graph):
+    await graph.ensure_node(A)
+    await graph.set_node_property(A, "hostname", "x.example")
+    await graph.set_node_property(A, "server", "Mastodon 4.3")
+
+    assert [v async for v in graph.node_property_values("server")] == ["Mastodon 4.3"]
+
+
+async def test_node_property_values_keeps_type(graph):
+    await graph.ensure_node(A)
+    await graph.ensure_node(B)
+    await graph.set_node_property(A, "http_status", 200)
+    await graph.set_node_property(B, "http_status", 410)
+
+    values = [v async for v in graph.node_property_values("http_status")]
+
+    assert set(values) == {200, 410}  # ints, not "200"/"410"
 
 
 # ---------------------------------------------------------------------------
