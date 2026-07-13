@@ -2,11 +2,12 @@ import asyncio
 import uvloop
 import logging
 from urllib.parse import urlparse
+from pathlib import Path
 
 import redis.asyncio
 import asyncpg
 
-from crawl import make_dispatcher, DEFAULT_MAX_WORKERS
+from crawl import make_dispatcher, DEFAULT_MAX_WORKERS, DEFAULT_PRIVATE_KEY_PEM_FILENAME
 from pub_crawler.database import database_setup
 from pub_crawler.database_graph import DatabaseGraph
 
@@ -30,7 +31,9 @@ async def recover_failed(dispatcher, G):
     return count
 
 
-async def main(redis_url, database_url):
+async def main(redis_url, database_url, private_key_pem_filename):
+
+    private_key_pem_data = Path(private_key_pem_filename).read_text()
 
     r = redis.asyncio.Redis.from_url(redis_url)
     max_conns = max(DEFAULT_MAX_WORKERS // 2, 1)
@@ -42,7 +45,7 @@ async def main(redis_url, database_url):
 
     try:
         G = DatabaseGraph(pool)
-        dispatcher = make_dispatcher(r, G, private_key_pem_data=None)
+        dispatcher = make_dispatcher(r, G, private_key_pem_data=private_key_pem_data)
         count = await recover_failed(dispatcher, G)
     finally:
         await r.aclose()
@@ -75,6 +78,12 @@ if __name__ == "__main__":
         default=os.environ.get("REDIS_URL"),
         help="Redis connection URL (env: REDIS_URL)",
     )
+    parser.add_argument(
+        "--private-key-pem",
+        default=os.environ.get("PRIVATE_KEY_PEM", DEFAULT_PRIVATE_KEY_PEM_FILENAME),
+        help="path to the PEM private key file "
+        f"(env: PRIVATE_KEY_PEM, default: {DEFAULT_PRIVATE_KEY_PEM_FILENAME})",
+    )
 
     args = parser.parse_args()
 
@@ -86,5 +95,5 @@ if __name__ == "__main__":
         print("Set REDIS_URL environment variable or pass --redis-url")
         sys.exit(1)
 
-    count = asyncio.run(main(args.redis_url, args.database_url))
+    count = asyncio.run(main(args.redis_url, args.database_url, args.private_key_pem))
     print(f"{count} jobs updated")
