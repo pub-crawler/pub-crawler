@@ -33,13 +33,23 @@ spec:
           command: ["python", "bin/recover_failed.py"]
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
+          # The config map supplies PRIVATE_KEY_PEM (path to the mounted key):
+          # recovery never signs a request, but make_dispatcher's clients parse
+          # the key at construction, so it must be present and valid.
+          envFrom:
+            - configMapRef:
+                name: {{ include "pub-crawler.fullname" . }}-config
           env:
             {{- include "pub-crawler.dbEnv" . | nindent 12 }}
             {{- include "pub-crawler.redisEnv" . | nindent 12 }}
+          volumeMounts:
+            {{- include "pub-crawler.keyVolumeMount" . | nindent 12 }}
           {{- with .Values.recoverFailed.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+      volumes:
+        {{- include "pub-crawler.keyVolume" . | nindent 8 }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
