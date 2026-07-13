@@ -127,6 +127,27 @@ prioritiseQueue:
       cpu: 250m
       memory: 128Mi
 
+# Failed-job recovery: recover_failed.py re-enqueues jobs from the Redis failed
+# set — page/collection jobs unconditionally, actor jobs only when the graph
+# holds a successfully fetched actor on the same hostname; webfinger jobs stay
+# put. Pre-install/pre-upgrade hook at weight -3 (after prioritiseQueue, last
+# before the crawler starts, so the new crawler drains what it re-enqueues; a
+# no-op on fresh installs, where the failed set is empty). Needs BOTH Redis and
+# Postgres. Recovered jobs leave the failed set (enqueue-then-unfail), so a
+# re-run only touches jobs that failed again — safe alongside a running
+# crawler, no stop required. DISABLED by default; `--set
+# recoverFailed.enabled=true` on a deploy when the failed set is worth
+# sweeping, then drop it again.
+recoverFailed:
+  enabled: false
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 128Mi
+
 # The crawl itself — a run-to-completion Job (re-created each helm revision).
 job:
   # Concurrent crawler pods. Safe to raise: pods coordinate through the shared
