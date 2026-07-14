@@ -60,17 +60,19 @@ class Dispatcher:
         await self.redis.sadd(SEEN, id)
 
     async def get(self):
-        count = 0
         while not self._stopped:
             popped = await self.redis.bzpopmin(QUEUE)
             if not popped:
                 raise Exception("Empty queue")
-            count += 1
             _, member, score = popped
+            next_available = self._score_to_na(score)
             job = self._member_to_job(member)
+            if next_available >= self.now():
+                await self._add_inflight(job)
+                return job
             handler = self._get_handler(job)
             next_available = handler.next_available(job)
-            if next_available <= self.now() or count >= MAX_SPIN:
+            if next_available <= self.now():
                 await self._add_inflight(job)
                 return job
             else:
