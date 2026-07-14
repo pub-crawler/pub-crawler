@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-07-14
+
+### Updated
+
+- Reduce burst processing to smooth out requests
+- Remove job skimming
+
 ## [0.9.1] - 2026-07-13
 
 ### Fixed
@@ -250,7 +257,8 @@ keepalive connections in ActivityPubClient and WebfingerClient
 - Crawler max depth defaults to 1.
 - `DatabaseGraph` no longer uses its own transaction.
 
-[Unreleased]: https://github.com/pub-crawler/pub-crawler/compare/v0.9.1...HEAD
+[Unreleased]: https://github.com/pub-crawler/pub-crawler/compare/v0.9.2...HEAD
+[0.9.2]: https://github.com/pub-crawler/pub-crawler/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/pub-crawler/pub-crawler/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/pub-crawler/pub-crawler/compare/v0.8.3...v0.9.0
 [0.8.3]: https://github.com/pub-crawler/pub-crawler/compare/v0.8.2...v0.8.3
