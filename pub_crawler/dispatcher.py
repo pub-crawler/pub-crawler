@@ -1,6 +1,5 @@
 import time
 import asyncio
-import math
 from datetime import datetime, timezone
 from pub_crawler.job_id import job_id
 import orjson
@@ -30,8 +29,6 @@ SEEN = "pub_crawler:seen"
 MAX_CLIENTS = 25
 TIME_PER_JOB = 100
 MAX_INFLIGHT = 15 * 60 * 1000
-
-MAX_SPIN = 10 * 5 * MAX_CLIENTS
 
 
 class Dispatcher:
@@ -65,19 +62,9 @@ class Dispatcher:
             if not popped:
                 raise Exception("Empty queue")
             _, member, score = popped
-            next_available = self._score_to_na(score)
             job = self._member_to_job(member)
-            if next_available >= self.now():
-                await self._add_inflight(job)
-                return job
-            handler = self._get_handler(job)
-            next_available = handler.next_available(job)
-            if next_available <= self.now():
-                await self._add_inflight(job)
-                return job
-            else:
-                score = self._job_to_score(job, next_available=next_available)
-                await self.redis.zadd(QUEUE, {member: score})
+            await self._add_inflight(job)
+            return job
         return None
 
     async def done(self, job):
@@ -149,10 +136,7 @@ class Dispatcher:
         return orjson.loads(string)
 
     def _job_to_score(self, job, next_available=None):
-        if next_available is None:
-            handler = self._get_handler(job)
-            next_available = handler.next_available(job)
-        return math.floor(next_available)
+        return 0
 
     def _score_to_na(self, score):
         return score

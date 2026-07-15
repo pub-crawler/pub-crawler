@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Mostly priority dispatching, to favour low-depth jobs
+
 ## [0.9.2] - 2026-07-14
 
 ### Updated

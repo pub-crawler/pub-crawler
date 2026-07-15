@@ -1,19 +1,20 @@
-"""Tests for Dispatcher — the job_type -> handler registry used both directions.
+"""Tests for Dispatcher — a pure priority queue plus the job_type -> handler
+registry used at dispatch time.
 
-  - set_handler(job_type, handler): register.
-  - enqueue(job): ask the handler that HANDLES this job type for its
-    next_available, and put (next_available, count, job) on the priority queue.
-  - get(): pop the soonest job, unwrap, hand it back (re-checking readiness).
-  - dispatch(job): hand the job to that handler's handle().
+  - set_handler(job_type, handler): register (needed for dispatch(), NOT enqueue).
+  - enqueue(job): put the job on the queue at a constant score (0); ordering
+    is entirely the member prefix: depth -> job type -> enqueue time (FIFO).
+  - get(): pop the tip + lease it, full stop. No availability check, no
+    re-queue — a throttled job is handed out and the WORKER waits in the
+    client's acquire(). The dispatcher is out of the time business.
+  - dispatch(job): hand the job to its type's handler.handle().
 
-Built before the handlers (which take the dispatcher and register via
-set_handler), so the construction cycle dissolves.
+Availability/throttling is the clients' concern (FixedWindowCounter.acquire);
+handler.next_available is never consulted by the dispatcher.
 
 Assumptions to flag if the shape differs:
-  - Dispatcher(queue) takes a PriorityQueue; jobs ride as
-    (next_available, count, job) tuples; get() unwraps back to the job.
-  - next_available is the priority key only — NOT stamped onto the job.
   - dispatch on an unknown job_type raises.
+  - stop()/lease/seen/failed semantics are unchanged from the previous contract.
 """
 
 import asyncio
@@ -82,11 +83,13 @@ async def test_dispatch_unknown_job_type_raises():
 
 
 # ---------------------------------------------------------------------------
-# enqueue: stamp next_available (from the HANDLING handler) + queue
+# enqueue: queue the job, nothing else. Availability is NOT the dispatcher's
+# business — no handler is consulted, no time is stamped into the score. All
+# throttling lives in the clients' acquire(), after get() hands the job out.
 # ---------------------------------------------------------------------------
 
 
-async def test_enqueue_consults_the_handler_and_queues_the_job():
+async def test_enqueue_consults_no_handler():
     ah = FakeHandler(na=4242)
     dis = Dispatcher(fake_redis())
     dis.set_handler("actor", ah)
@@ -94,34 +97,33 @@ async def test_enqueue_consults_the_handler_and_queues_the_job():
     job = actor_job()
     await dis.enqueue(job)
 
-    # The handler that handles this type is asked when it can next be handled,
-    assert ah.na_calls == [job]
+    # The handler is never asked about availability,
+    assert ah.na_calls == []
     # and the job round-trips back out through the priority queue via get().
     assert await dis.get() == job
 
 
-async def test_enqueue_uses_the_handler_for_the_jobs_own_type():
-    ah = FakeHandler(na=100)
-    ch = FakeHandler(na=500)
+async def test_enqueue_works_with_no_handlers_registered():
+    # enqueue no longer needs the handler registry at all — a bare dispatcher
+    # (e.g. a seeding or recovery script) can queue jobs for a crawler to drain.
     dis = Dispatcher(fake_redis())
-    dis.set_handler("actor", ah)
-    dis.set_handler("collection", ch)
 
-    job = {"job_type": "collection", "collection_id": "https://x.example/c"}
+    job = actor_job()
     await dis.enqueue(job)
 
-    # Only the handler for THIS job's type is consulted, and the job round-trips.
-    assert ch.na_calls == [job]
-    assert ah.na_calls == []
     assert await dis.get() == job
 
 
 # ---------------------------------------------------------------------------
-# Priority: get() returns jobs in next_available order, FIFO on ties
+# Priority: get() returns jobs in depth -> job-type -> FIFO order. Availability
+# never reorders anything — a job's throttle state is invisible to the queue.
 # ---------------------------------------------------------------------------
 
 
-async def test_get_returns_jobs_in_next_available_order():
+async def test_get_ignores_availability_and_stays_fifo_within_a_class():
+    # Jobs whose handler would report wildly different next_available values
+    # (carried in `na`, which the old contract sorted by) come back in pure
+    # insertion order: availability plays no role in queue position.
     h = FakeHandler()
     dis = Dispatcher(fake_redis())
     dis.set_handler("actor", h)
@@ -132,11 +134,11 @@ async def test_get_returns_jobs_in_next_available_order():
         )
 
     order = [(await dis.get())["na"] for _ in range(3)]
-    assert order == [100, 200, 300]  # soonest first, regardless of insertion order
+    assert order == [300, 100, 200]  # insertion order, NOT availability order
 
 
-async def test_get_breaks_next_available_ties_by_insertion_order():
-    h = FakeHandler(na=100)  # every job gets the same next_available
+async def test_get_breaks_same_class_ties_by_insertion_order():
+    h = FakeHandler(na=100)
     dis = Dispatcher(fake_redis())
     dis.set_handler("actor", h)
 
@@ -162,11 +164,11 @@ async def test_get_breaks_next_available_ties_by_insertion_order():
 
 
 async def test_get_ties_stay_fifo_across_a_digit_width_boundary():
-    # The tiebreaker must order numerically, not lexicographically. Enqueue
-    # enough same-priority jobs that the insertion counter crosses a power-of-10
+    # The FIFO tiebreaker must order numerically, not lexicographically. Enqueue
+    # enough same-class jobs that the insertion counter crosses a power-of-10
     # boundary (0..10): lexicographically "10" < "2", so a string-compared
     # tiebreaker would float the 11th job ahead of the 3rd. FIFO must hold.
-    h = FakeHandler(na=100)  # every job gets the same next_available
+    h = FakeHandler(na=100)
     dis = Dispatcher(fake_redis())
     dis.set_handler("actor", h)
 
@@ -730,19 +732,19 @@ async def test_enqueue_raises_on_an_unidentifiable_job():
 
 # ---------------------------------------------------------------------------
 # Queue ordering with depth + job type: get() must hand back jobs ordered by
-#   next_available (soonest) -> depth (shallowest) -> job type
-#   (webfinger < actor < collection < page) -> FIFO (insertion order).
-# Black-box: these assert get() ORDER only, independent of how the keys are
-# encoded (member prefix vs folded into the score).
+#   depth (shallowest) -> job type (webfinger < actor < collection < page)
+#   -> FIFO (insertion order).
+# Availability is NOT a sort key at any rank. Black-box: these assert get()
+# ORDER only, independent of how the keys are encoded (member prefix vs score).
 #
 # Assumptions to flag if the contract differs:
-#   - depth outranks job type (na -> depth -> type). The mixed case (different
-#     depth AND type at once) is intentionally NOT pinned here pending the
-#     depth-vs-type precedence call -- say the word and I'll add it.
+#   - depth outranks job type. The mixed case (different depth AND type at
+#     once) is intentionally NOT pinned here pending the depth-vs-type
+#     precedence call -- say the word and I'll add it.
 #   - webfinger jobs carry no `depth`; assumed to sort as depth 0 (so type
 #     precedence lands them first among the shallowest).
 #   - a missing `depth` defaults gracefully (uniform no-depth jobs still order
-#     by na then FIFO -- which is why the existing ordering tests keep passing).
+#     FIFO -- which is why the basic queue tests keep passing).
 # ---------------------------------------------------------------------------
 
 
@@ -754,13 +756,12 @@ _ID_FIELD = {
 }
 
 
-def oj(job_type, tag, *, depth=None, na=0):
-    """A uniquely-identified ordering job carrying na (the score), an optional
-    depth, and a `tag` to assert ordering by."""
+def oj(job_type, tag, *, depth=None):
+    """A uniquely-identified ordering job with an optional depth and a `tag`
+    to assert ordering by."""
     job = {
         "job_type": job_type,
         _ID_FIELD[job_type]: f"https://x.example/{job_type}/{tag}",
-        "na": na,
         "tag": tag,
     }
     if depth is not None:
@@ -779,20 +780,20 @@ async def drain_tags(dis, n):
     return [(await dis.get())["tag"] for _ in range(n)]
 
 
-async def test_next_available_still_dominates_depth():
-    # depth is a tiebreak, NOT an override: an earlier-available deep job beats
-    # a later-available shallow one.
+async def test_depth_dominates_insertion_order():
+    # The inversion of the old contract: a shallow job enqueued LATER beats a
+    # deep job enqueued earlier. Depth is the top-ranked key, full stop.
     dis = ordering_dispatcher()
-    await dis.enqueue(oj("actor", "early-d3", depth=3, na=100))
-    await dis.enqueue(oj("actor", "late-d0", depth=0, na=200))
+    await dis.enqueue(oj("actor", "early-d3", depth=3))
+    await dis.enqueue(oj("actor", "late-d0", depth=0))
 
-    assert await drain_tags(dis, 2) == ["early-d3", "late-d0"]
+    assert await drain_tags(dis, 2) == ["late-d0", "early-d3"]
 
 
-async def test_same_availability_orders_shallower_depth_first():
+async def test_shallower_depth_first():
     dis = ordering_dispatcher()
-    await dis.enqueue(oj("actor", "d2", depth=2, na=100))
-    await dis.enqueue(oj("actor", "d0", depth=0, na=100))
+    await dis.enqueue(oj("actor", "d2", depth=2))
+    await dis.enqueue(oj("actor", "d0", depth=0))
 
     assert await drain_tags(dis, 2) == ["d0", "d2"]
 
@@ -800,27 +801,27 @@ async def test_same_availability_orders_shallower_depth_first():
 async def test_same_depth_orders_by_job_type():
     # webfinger < actor < collection < page (here: actor/collection/page at one depth)
     dis = ordering_dispatcher()
-    await dis.enqueue(oj("page", "pg", depth=1, na=100))
-    await dis.enqueue(oj("collection", "co", depth=1, na=100))
-    await dis.enqueue(oj("actor", "ac", depth=1, na=100))
+    await dis.enqueue(oj("page", "pg", depth=1))
+    await dis.enqueue(oj("collection", "co", depth=1))
+    await dis.enqueue(oj("actor", "ac", depth=1))
 
     assert await drain_tags(dis, 3) == ["ac", "co", "pg"]
 
 
-async def test_webfinger_sorts_ahead_of_a_same_availability_actor():
+async def test_webfinger_sorts_ahead_of_a_same_depth_actor():
     # webfinger has the highest type precedence (and no depth -> assumed depth 0).
     dis = ordering_dispatcher()
-    await dis.enqueue(oj("actor", "ac", depth=0, na=100))
-    await dis.enqueue(oj("webfinger", "wf", na=100))
+    await dis.enqueue(oj("actor", "ac", depth=0))
+    await dis.enqueue(oj("webfinger", "wf"))
 
     assert await drain_tags(dis, 2) == ["wf", "ac"]
 
 
 async def test_full_tie_falls_back_to_fifo():
-    # same na, depth, and type -> insertion order preserved.
+    # same depth and type -> insertion order preserved.
     dis = ordering_dispatcher()
-    await dis.enqueue(oj("actor", "first", depth=1, na=100))
-    await dis.enqueue(oj("actor", "second", depth=1, na=100))
+    await dis.enqueue(oj("actor", "first", depth=1))
+    await dis.enqueue(oj("actor", "second", depth=1))
 
     assert await drain_tags(dis, 2) == ["first", "second"]
 
@@ -828,53 +829,53 @@ async def test_full_tie_falls_back_to_fifo():
 async def test_depth_orders_numerically_not_lexicographically():
     # the padding trap: depth 10 must NOT sort before depth 2.
     dis = ordering_dispatcher()
-    await dis.enqueue(oj("actor", "d10", depth=10, na=100))
-    await dis.enqueue(oj("actor", "d2", depth=2, na=100))
+    await dis.enqueue(oj("actor", "d10", depth=10))
+    await dis.enqueue(oj("actor", "d2", depth=2))
 
     assert await drain_tags(dis, 2) == ["d2", "d10"]
 
 
 # ---------------------------------------------------------------------------
-# Deferral re-queue: a job popped while due, but which the handler now defers to
-# the future (rate-limited), must be re-queued at the NEW score -- not its old
-# one. With the stale score it would be the queue minimum again immediately and
-# get() would spin forever.
+# Throttle-free dispatch: the dispatcher never asks anyone about availability.
+# get() is pop-the-tip + lease, full stop -- a throttled job is handed out and
+# the worker waits in the client's acquire(), not in the queue. These pin the
+# contract by poisoning next_available: any call to it fails the test.
 # ---------------------------------------------------------------------------
 
 
-class ScriptedNAHandler:
-    """next_available walks a per-tag script (one pop per call, then sticks on
-    the last value) -- so a job can report a different availability at enqueue
-    vs. the get() recompute, which is what triggers the defer branch."""
+class PoisonedHandler:
+    """A handler whose next_available must never be called. handle() works,
+    so dispatch-path tests can still use it."""
 
-    def __init__(self, scripts):
-        self._scripts = {tag: list(seq) for tag, seq in scripts.items()}
+    def __init__(self):
+        self.handled = []
 
     def next_available(self, job):
-        seq = self._scripts[job["tag"]]
-        return seq.pop(0) if len(seq) > 1 else seq[0]
+        raise AssertionError("next_available must not be consulted")
 
     async def handle(self, job):
-        pass
+        self.handled.append(job)
 
 
-async def test_deferred_job_is_requeued_at_the_new_availability():
-    # `defer`: stored at na=50 (<= now), but the recompute reports na=200 (> now),
-    # so get() must re-queue it at 200. `ready`: stays at 60 (<= now) and is the
-    # one returned. If the re-queue used the stale 50, `defer` would be the min
-    # again and get() would loop forever -- wait_for turns that into a failure.
-    clock = Clock(100)
-    dis = Dispatcher(fake_redis(), now=clock)
-    dis.set_handler("actor", ScriptedNAHandler({"defer": [50, 200], "ready": [60]}))
+async def test_get_never_consults_next_available():
+    dis = Dispatcher(fake_redis())
+    dis.set_handler("actor", PoisonedHandler())
 
-    await dis.enqueue(oj("actor", "defer"))
-    await dis.enqueue(oj("actor", "ready"))
+    await dis.enqueue(oj("actor", "throttled", depth=1))
 
+    # The tip comes straight out, throttle state unseen and unasked.
     got = await asyncio.wait_for(dis.get(), timeout=1.0)
-    assert got["tag"] == "ready"  # the deferred job was put back, not handed out
+    assert got["tag"] == "throttled"
 
-    remaining = await dis.redis.zrange(QUEUE, 0, -1, withscores=True)
-    assert len(remaining) == 1
-    member, score = remaining[0]
-    assert dis._member_to_job(member)["tag"] == "defer"
-    assert score == 200  # re-scored to the new availability, NOT the stale 50
+
+async def test_enqueued_jobs_all_score_zero():
+    # White-box on purpose: the constant-zero score is what makes the member
+    # prefix (depth|type|ts) the total queue order, and what the one-shot
+    # re-score fixup for the live queue relies on. Pin it.
+    dis = ordering_dispatcher()
+    await dis.enqueue(oj("actor", "a", depth=1))
+    await dis.enqueue(oj("page", "p", depth=3))
+
+    members = await dis.redis.zrange(QUEUE, 0, -1, withscores=True)
+    assert len(members) == 2
+    assert all(score == 0 for _, score in members)
