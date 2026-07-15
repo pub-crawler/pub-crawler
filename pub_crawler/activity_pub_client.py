@@ -13,6 +13,8 @@ ACCEPT = (
 )
 DEFAULT_MAX_WORKERS = 50
 DEFAULT_KEEPALIVE_EXPIRY = 10  # Burst window
+DEFAULT_CONNECT_TIMEOUT = 5.0
+DEFAULT_RESPONSE_TIMEOUT = 30.0
 
 
 class ActivityPubClient:
@@ -39,7 +41,11 @@ class ActivityPubClient:
             )
             transport = httpx.AsyncHTTPTransport(http2=True, retries=3, limits=limits)
         self.client = httpx.AsyncClient(
-            transport=transport, cookies=CookieJar(policy=BlockAllCookiesPolicy())
+            transport=transport,
+            cookies=CookieJar(policy=BlockAllCookiesPolicy()),
+            timeout=httpx.Timeout(
+                DEFAULT_RESPONSE_TIMEOUT, connect=DEFAULT_CONNECT_TIMEOUT
+            ),
         )
         self._key = serialization.load_pem_private_key(
             private_key_pem.encode(), password=None

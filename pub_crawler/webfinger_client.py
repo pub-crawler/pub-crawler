@@ -11,6 +11,8 @@ MEDIA_TYPES = [
     'application/ld+json; profile="https://www.w3.org/ns/activitystreams"',
 ]
 DEFAULT_KEEPALIVE_EXPIRY = 10  # Burst window
+DEFAULT_CONNECT_TIMEOUT = 5.0
+DEFAULT_RESPONSE_TIMEOUT = 30.0
 
 
 class WebfingerClient:
@@ -25,7 +27,11 @@ class WebfingerClient:
             )
             transport = httpx.AsyncHTTPTransport(http2=True, retries=3, limits=limits)
         self.client = httpx.AsyncClient(
-            transport=transport, cookies=CookieJar(policy=BlockAllCookiesPolicy())
+            transport=transport,
+            cookies=CookieJar(policy=BlockAllCookiesPolicy()),
+            timeout=httpx.Timeout(
+                DEFAULT_RESPONSE_TIMEOUT, connect=DEFAULT_CONNECT_TIMEOUT
+            ),
         )
 
     async def get_actor_id(self, wf):

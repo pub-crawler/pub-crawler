@@ -25,12 +25,12 @@ async def worker(name, dispatcher, *, rand=random.random, sleep=_sleep_ms):
                 logging.info(f"{name} dispatching job {job_id(job)}")
                 await dispatcher.dispatch(job)
             except Exception as e:
-                logging.warning(f"{name} job {job_id(job)} failed: {e}")
+                logging.warning(f"{name} job {job_id(job)} failed: {e!r}")
                 await dispatcher.fail(job)
                 continue
             await dispatcher.done(job)
         except Exception as e:
-            logging.error(f"{name} got dispatcher error {e}")
+            logging.error(f"{name} got dispatcher error {e!r}")
             dispatcher_failures += 1
             if dispatcher_failures > MAX_FAILURES:
                 logging.error(f"{name} too many dispatcher failures, quitting")

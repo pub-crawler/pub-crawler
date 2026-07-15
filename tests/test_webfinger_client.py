@@ -286,3 +286,19 @@ def test_next_available_maxes_general_and_burst_keyed_by_host(wf):
     assert result == 500  # max(general=100, burst=500)
     assert general.origins == ["https://crawler.pub"]
     assert burst.origins == ["https://crawler.pub"]
+
+
+# ---------------------------------------------------------------------------
+# HTTP timeouts: same contract as ActivityPubClient -- patient reads, fast
+# connects. Configuration-only -- nothing here waits.
+# ---------------------------------------------------------------------------
+
+
+async def test_timeout_is_patient_read_fast_connect():
+    client = WebfingerClient(
+        nonblocking_counter(),
+        nonblocking_counter(),
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json={})),
+    )
+
+    assert client.client.timeout == httpx.Timeout(30.0, connect=5.0)

@@ -501,3 +501,17 @@ def test_next_available_returns_burst_when_it_is_the_binding_gate(keypair):
     burst = FakeCounter(999)
 
     assert na_client(pem, general, paged, burst).next_available(PAGE_URL) == 999
+
+
+# ---------------------------------------------------------------------------
+# HTTP timeouts: patient reads (deep-offset pages on small instances can run
+# >10s server-side), fast connects (dead hosts must not park a worker).
+# Configuration-only -- nothing here waits.
+# ---------------------------------------------------------------------------
+
+
+async def test_timeout_is_patient_read_fast_connect(keypair):
+    pem, _ = keypair
+    client = make_client(lambda request: httpx.Response(200, json={}), pem)
+
+    assert client.client.timeout == httpx.Timeout(30.0, connect=5.0)
