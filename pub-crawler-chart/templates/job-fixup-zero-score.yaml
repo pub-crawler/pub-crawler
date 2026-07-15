@@ -1,0 +1,55 @@
+{{- if .Values.fixupZeroScore.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "pub-crawler.fullname" . }}-fixup-zero-score
+  labels:
+    {{- include "pub-crawler.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    # Flattens every queue score to the constant 0 the 0.10.0 pure-priority
+    # dispatcher enqueues at. After every hook that can enqueue (seed -5,
+    # recoverFailed -3), the very last step before the crawler starts.
+    "helm.sh/hook-weight": "-2"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: {{ .Values.job.backoffLimit }}
+  template:
+    metadata:
+      labels:
+        {{- include "pub-crawler.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: fixup-zero-score
+    spec:
+      restartPolicy: Never
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: fixup-zero-score
+          image: {{ include "pub-crawler.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["python", "fixup/fixup_zero_score.py"]
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          env:
+            {{- include "pub-crawler.redisEnv" . | nindent 12 }}
+          {{- with .Values.fixupZeroScore.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

@@ -148,6 +148,28 @@ recoverFailed:
       cpu: 250m
       memory: 128Mi
 
+# Zero-score migration: fixup_zero_score.py rewrites every queue member's
+# score to the constant 0 the pure-priority dispatcher (pub-crawler 0.10.0)
+# enqueues at, so the depth|type|ts member prefix becomes the total queue
+# order for the existing backlog. Pre-install/pre-upgrade hook at weight -2 —
+# after every hook that can enqueue (seed -5, recoverFailed -3), the very last
+# step before the crawler starts. Redis-only; idempotent (re-scoring 0 to 0 is
+# a no-op, safe to re-run). Run with the OLD crawler STOPPED: its workers
+# re-add popped members at timestamp scores behind the fixup's back, and a
+# member popped mid-fixup gets re-inserted while in flight. The chart can't
+# enforce that — delete the running crawler Job before upgrading. DISABLED by
+# default — it's a one-shot for the 0.10.0 priority-queue deploy; `--set
+# fixupZeroScore.enabled=true` on that upgrade, then drop the flag.
+fixupZeroScore:
+  enabled: false
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 128Mi
+
 # The crawl itself — a run-to-completion Job (re-created each helm revision).
 job:
   # Concurrent crawler pods. Safe to raise: pods coordinate through the shared
