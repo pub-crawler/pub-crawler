@@ -43,6 +43,7 @@ wait_for.
 """
 
 import asyncio
+import logging
 
 import pytest
 
@@ -485,3 +486,26 @@ async def test_abort_before_start_is_safe():
     await asyncio.wait_for(crawler.abort(), timeout=1.0)
 
     assert dis._stopped
+
+
+# ---------------------------------------------------------------------------
+# Failure logging: the log line must name the exception TYPE. TimeoutError('')
+# stringifies to nothing, which made this week's timeout storm read as
+# `failed: ` in the logs -- repr keeps the type visible.
+# ---------------------------------------------------------------------------
+
+
+async def test_failure_log_names_the_exception_type_even_when_message_is_blank(
+    caplog,
+):
+    class BlankFailureDispatcher(ScriptedDispatcher):
+        async def dispatch(self, j):
+            await super().dispatch(j)
+            raise TimeoutError("")
+
+    dis = BlankFailureDispatcher([job("quiet")])
+    with caplog.at_level(logging.WARNING):
+        await asyncio.wait_for(worker("w-0", dis), timeout=1.0)
+
+    assert dis.failed_jobs == [job("quiet")]
+    assert "TimeoutError" in caplog.text
