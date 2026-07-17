@@ -14,6 +14,7 @@ class DatabaseGraph:
     ) -> None:
         self._pool = pool
         self._cache = LRUCache(maxsize=max_cache_size)
+        self._label_cache = LRUCache(maxsize=max_cache_size)
 
     async def ensure_node(self, label: str) -> None:
         if label in self._cache:
@@ -98,14 +99,17 @@ class DatabaseGraph:
 
     async def delete_node(self, label: str) -> None:
         async with self._pool.acquire() as conn:
+            id = await self._node_id(conn, label)
             await conn.execute(
                 """
-                DELETE FROM node WHERE label=$1
+                DELETE FROM node WHERE id=$1
                 """,
-                label,
+                id,
             )
             if label in self._cache:
                 del self._cache[label]
+            if id in self._label_cache:
+                del self._label_cache[id]
 
     async def delete_edge(self, from_label: str, to_label: str) -> None:
         async with self._pool.acquire() as conn:
@@ -423,6 +427,31 @@ class DatabaseGraph:
                 async for row in conn.cursor(sql, name):
                     yield orjson.loads(row["value"])
 
+    async def first_neighbor(self, label: str) -> str | None:
+        async with self._pool.acquire() as conn:
+            async with conn.transaction():
+                id = await self._node_id(conn, label)
+                sql = """
+                SELECT from_node, to_node
+                FROM edge
+                WHERE from_node = $1
+                OR to_node = $1
+                ORDER BY created_at, from_node, to_node
+                LIMIT 1
+                """
+                rows = await conn.fetch(sql, id)
+                if len(rows) == 0:
+                    return None
+                row = rows[0]
+                if row["from_node"] == id:
+                    return await self._node_label(conn, row["to_node"])
+                elif row["to_node"] == id:
+                    return await self._node_label(conn, row["from_node"])
+                else:
+                    raise Exception(
+                        f"Mismatched edge: {row["from_node"]}, {row["to_node"]}"
+                    )
+
     async def _node_id(self, conn, label: str) -> int | None:
         if label in self._cache:
             return self._cache[label]
@@ -431,3 +460,12 @@ class DatabaseGraph:
             if id is not None:
                 self._cache[label] = id
             return id
+
+    async def _node_label(self, conn, id: int) -> str | None:
+        if id in self._label_cache:
+            return self._label_cache[id]
+        else:
+            label = await conn.fetchval("SELECT label FROM node WHERE id=$1", id)
+            if label is not None:
+                self._label_cache[id] = label
+            return label
