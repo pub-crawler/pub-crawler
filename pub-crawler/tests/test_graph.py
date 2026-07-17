@@ -17,6 +17,9 @@ The interface is async (DatabaseGraph does async DB I/O):
   async for from_id, to_id, props in all_edges()      # int endpoint ids only
   async for value in node_property_values(name)       # distinct values of one
                                                       # node property, decoded
+  await first_neighbor(label) -> str | None           # other end of the node's
+                                                      # earliest edge (either
+                                                      # direction); None if none
 
 Assumptions flagged for confirmation:
   - all_nodes() yields (id, label, props); all_edges() yields (from_id, to_id,
@@ -286,6 +289,77 @@ async def test_node_property_values_keeps_type(graph):
     values = [v async for v in graph.node_property_values("http_status")]
 
     assert set(values) == {200, 410}  # ints, not "200"/"410"
+
+
+# ---------------------------------------------------------------------------
+# first_neighbor(label): the label at the other end of the node's EARLIEST edge,
+# either direction; None when the node has no edges (or doesn't exist).
+#
+# Semantics: for a never-fetched node this IS its discoverer — its own pages
+# never ran, so every edge touching it was created by the counterparty's page,
+# and the earliest one is the discovery event (recovery reconstructs job depth
+# as discoverer's depth + 1). For fetched nodes (seeds included) the earliest
+# edge may come from the node's OWN crawl, so it's just the first-crawled
+# neighbor — callers own that caveat.
+#
+# Ordering contract: earliest by creation time, which must survive re-ensuring
+# an existing edge (created_at + ON CONFLICT DO NOTHING in the db; a one-shot
+# sequence stamp in the fake). Ties (e.g. same-transaction batch inserts) are
+# broken arbitrarily but stably — not pinned here. The db-side tests rely on
+# sequential ensure_edge calls landing distinct timestamps, which separate
+# autocommit statements do at microsecond resolution.
+# ---------------------------------------------------------------------------
+
+
+async def test_first_neighbor_is_the_other_end_of_the_first_incoming_edge(graph):
+    for n in (A, B, C):
+        await graph.ensure_node(n)
+    await graph.ensure_edge(B, A)  # B's page discovered A
+    await graph.ensure_edge(C, A)  # later sighting
+
+    assert await graph.first_neighbor(A) == B
+
+
+async def test_first_neighbor_is_the_other_end_of_the_first_outgoing_edge(graph):
+    for n in (A, B, C):
+        await graph.ensure_node(n)
+    await graph.ensure_edge(A, C)  # discovered via a following page: A -> C
+    await graph.ensure_edge(B, A)
+
+    assert await graph.first_neighbor(A) == C
+
+
+async def test_first_neighbor_ignores_edge_direction_when_ordering(graph):
+    # Earliest wins across the union of both directions, not per-direction.
+    for n in (A, B, C):
+        await graph.ensure_node(n)
+    await graph.ensure_edge(B, A)
+    await graph.ensure_edge(A, C)
+
+    assert await graph.first_neighbor(A) == B
+
+
+async def test_first_neighbor_is_stable_when_an_edge_is_re_ensured(graph):
+    # Re-ensuring an existing edge later must NOT make it "newer": creation
+    # time survives (ON CONFLICT DO NOTHING keeps the original created_at).
+    for n in (A, B, C):
+        await graph.ensure_node(n)
+    await graph.ensure_edge(B, A)
+    await graph.ensure_edge(C, A)
+    await graph.ensure_edge(C, A)  # re-ensure the later edge...
+    await graph.ensure_edge(B, A)  # ...and the earlier one
+
+    assert await graph.first_neighbor(A) == B
+
+
+async def test_first_neighbor_of_an_edgeless_node_is_none(graph):
+    await graph.ensure_node(A)
+
+    assert await graph.first_neighbor(A) is None
+
+
+async def test_first_neighbor_of_an_unknown_label_is_none(graph):
+    assert await graph.first_neighbor("https://never.example/users/nobody") is None
 
 
 # ---------------------------------------------------------------------------

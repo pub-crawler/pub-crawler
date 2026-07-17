@@ -134,6 +134,11 @@ class FakeGraph:
         self._edges = dict()
         self._ids = dict()
         self._counter = 0
+        # Edge creation order, keyed (from, to), stamped ONCE at first creation
+        # (mirrors created_at surviving ON CONFLICT DO NOTHING). Kept separate
+        # from edge props so all_edges/get_edge_properties stay unpolluted.
+        self._edge_seq = dict()
+        self._edge_counter = 0
 
     async def ensure_node(self, label):
         if not label in self._nodes:
@@ -145,6 +150,8 @@ class FakeGraph:
             self._edges[from_label] = dict()
         if not to_label in self._edges[from_label]:
             self._edges[from_label][to_label] = dict()
+            self._edge_counter += 1
+            self._edge_seq[(from_label, to_label)] = self._edge_counter
 
     async def has_node(self, label):
         return label in self._nodes
@@ -257,6 +264,18 @@ class FakeGraph:
                 from_node = self._ids[from_label]
                 to_node = self._ids[to_label]
                 yield from_node, to_node, props
+
+    async def first_neighbor(self, label):
+        # Other endpoint of the node's earliest edge, either direction; None if
+        # the node has no edges (or doesn't exist).
+        earliest = None
+        other = None
+        for (f, t), seq in self._edge_seq.items():
+            if f == label or t == label:
+                if earliest is None or seq < earliest:
+                    earliest = seq
+                    other = t if f == label else f
+        return other
 
     async def node_property_values(self, name):
         # Distinct values of one property across all nodes, unordered.
