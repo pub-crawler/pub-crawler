@@ -170,6 +170,30 @@ fixupZeroScore:
       cpu: 250m
       memory: 128Mi
 
+# HTTP-status recovery: recover_http_status.py re-enqueues work lost to
+# recoverable HTTP status deaths (429/5xx recorded on the node, no failed-set
+# entry): failed actors at seed/stamped/reconstructed depth, failed collections
+# and last-pages from the node's own props. Safe CONCURRENT with a running
+# crawl (one MVCC read pass + Redis enqueues) — the intended run is
+# render-and-kubectl-apply like the failed-set sweeps, not a helm upgrade; the
+# hook annotations only matter if you enable it during an upgrade (weight -1,
+# last before the crawler). Seeds: supply the webfinger,actor_id CSV produced
+# by discover_webfingers.py via
+#   --set-file recoverHttpStatus.seedCsv=data/webfinger-to-actor-id.csv
+# (rendered into a ConfigMap, mounted read-only; SEED_FILE points at it).
+# NOT idempotent until the enqueued retries drain — run once per cycle.
+# DISABLED by default.
+recoverHttpStatus:
+  enabled: false
+  seedCsv: ""
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
 # The crawl itself — a run-to-completion Job (re-created each helm revision).
 job:
   # Concurrent crawler pods. Safe to raise: pods coordinate through the shared
