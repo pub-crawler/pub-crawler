@@ -41,7 +41,7 @@ migrations = {
     FOREIGN KEY (from_node, to_node) REFERENCES edge (from_node, to_node) ON DELETE CASCADE
   );
   """,
-  "create_edge_to_node_idx": """
+    "create_edge_to_node_idx": """
   CREATE INDEX edge_to_node_idx ON edge (to_node);
   """,
 }
