@@ -819,6 +819,46 @@ async def test_records_http_status_for_error_responses(status):
     assert dis.enqueued == []
 
 
+@pytest.mark.parametrize("depth", [0, 3])
+async def test_stamps_depth_even_when_the_fetch_fails(depth):
+    # The job's depth must survive a failed fetch: the job is gone afterward,
+    # so the node is the only record of what depth this actor was reached at.
+    # Without it, a 429/5xx'd actor can't be re-enqueued at the right depth
+    # (the 2026-07 recovery work had to reconstruct depths from edge history).
+    client = FakeActivityPubClient(error=http_status_error(429))
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(
+        actor_job(ACTOR_ID, depth)
+    )
+
+    assert await graph.get_node_property(ACTOR_ID, "depth") == depth
+
+
+async def test_stamps_hostname_even_when_the_fetch_fails():
+    # Same provenance rule as depth: the node should record which host this
+    # actor lives on whether or not the fetch succeeded — failed-host analyses
+    # shouldn't have to re-parse actor URLs.
+    client = FakeActivityPubClient(error=http_status_error(429))
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 1))
+
+    assert await graph.get_node_property(ACTOR_ID, "hostname") == "cosocial.example"
+
+
+async def test_failed_fetch_leaves_no_last_fetch_date():
+    # Load-bearing for recovery: the skip-guard keys on last_fetch_date, so a
+    # failed fetch must NOT stamp it — otherwise a re-enqueued actor job would
+    # be skipped instead of retried.
+    client = FakeActivityPubClient(error=http_status_error(429))
+    graph = FakeGraph()
+
+    await make_handler(client, graph, FakeDispatcher()).handle(actor_job(ACTOR_ID, 1))
+
+    assert await graph.get_node_property(ACTOR_ID, "last_fetch_date") is None
+
+
 # ---------------------------------------------------------------------------
 # Enqueue collections — unconditional (leaves get counts too)
 # ---------------------------------------------------------------------------
