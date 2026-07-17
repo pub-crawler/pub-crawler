@@ -22,6 +22,10 @@ class ActorHandler(Handler):
         props = {}
         headers = {}
         doc = {}
+
+        props["depth"] = depth
+        props["hostname"] = urlparse(actor_id).hostname
+
         if last_fetch_date:
             return
         try:
@@ -32,8 +36,6 @@ class ActorHandler(Handler):
         if "http_status" not in props:
             props["http_status"] = 200
             props["last_fetch_date"] = datetime.now(timezone.utc).isoformat()
-            props["depth"] = depth
-            props["hostname"] = urlparse(actor_id).hostname
             if "server" in headers:
                 props["server"] = headers["server"]
             if "preferredUsername" in doc and isinstance(doc["preferredUsername"], str):
