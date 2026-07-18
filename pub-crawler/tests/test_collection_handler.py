@@ -704,3 +704,49 @@ def test_next_available_delegates_to_the_client_for_the_collection_url():
     # It HANDLES collection jobs, so it asks its client about the collection URL.
     assert result == NA_RESULT
     assert client.na_calls == [FOLLOWERS_ID]
+
+
+# ---------------------------------------------------------------------------
+# pages_complete on inline collections: the membership is fully consumed from
+# the collection doc itself, so the walk IS complete — without the flag,
+# inline collections read as incomplete forever (the depth-0 census gap).
+# At max_depth the members are NOT walked (leaf gate), so no flag — mirroring
+# paged collections, which never claim completeness they didn't earn.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("key", ["orderedItems", "items"])
+@pytest.mark.parametrize(
+    "direction, collection_id",
+    [("followers", FOLLOWERS_ID), ("following", FOLLOWING_ID)],
+)
+async def test_inline_collection_marks_pages_complete(direction, collection_id, key):
+    client = FakeActivityPubClient(
+        doc=inline_collection(collection_id, [MEMBER_A, MEMBER_B], key=key)
+    )
+    dis = FakeDispatcher()
+    graph = FakeGraph()
+    await graph.ensure_node(OWNER_ID)
+
+    await make_handler(client, dis, graph).handle(
+        collection_job(collection_id, direction, 0)
+    )
+
+    assert (
+        await graph.get_node_property(OWNER_ID, f"{direction}_pages_complete") is True
+    )
+
+
+async def test_inline_collection_at_max_depth_does_not_mark_pages_complete():
+    client = FakeActivityPubClient(
+        doc=inline_collection(FOLLOWERS_ID, [MEMBER_A], key="orderedItems")
+    )
+    dis = FakeDispatcher()
+    graph = FakeGraph()
+    await graph.ensure_node(OWNER_ID)
+
+    await make_handler(client, dis, graph).handle(
+        collection_job(FOLLOWERS_ID, "followers", MAX_DEPTH)
+    )
+
+    assert await graph.get_node_property(OWNER_ID, "followers_pages_complete") is None
