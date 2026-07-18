@@ -65,6 +65,7 @@ class CollectionHandler(Handler):
                             direction,
                             depth,
                         )
+                        props[f"{direction}_pages_complete"] = True
                     else:
                         props[f"{direction}_members_shared"] = False
 
