@@ -19,6 +19,7 @@ node_schema = pa.schema(
         ("type", pa.string()),
         ("followers_count", pa.int32()),
         ("following_count", pa.int32()),
+        ("depth", pa.int32()),
     ]
 )
 
@@ -41,6 +42,7 @@ async def snapshot_nodes(G, node_filename):
     int_props = [
         "followers_count",
         "following_count",
+        "depth"
     ]
     other_props = ["hostname", "preferred_username", "name", "type"]
     batch = collections.defaultdict(list)

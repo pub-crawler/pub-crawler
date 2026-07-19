@@ -5,7 +5,7 @@ snapshot iterates a Graph (all_nodes -> (id, label, props), all_edges ->
 
   nodes: one row per node, columns
     id, label, hostname, preferred_username, name, published, type,
-    followers_count, following_count
+    followers_count, following_count, depth
   edges: one row per edge, columns `from` and `to` (integer node ids)
 
 The node columns beyond id/label are read from each node's `props` by the
@@ -43,6 +43,7 @@ NODE_COLUMNS = [
     "type",
     "followers_count",
     "following_count",
+    "depth",
 ]
 EDGE_COLUMNS = ["from", "to"]
 
@@ -65,6 +66,7 @@ async def test_writes_node_and_edge_parquet_with_expected_columns(tmp_path):
             "type": "Person",
             "followers_count": 5,
             "following_count": 7,
+            "depth": 2,
         },
     )
     await g.ensure_node(ALICE)  # a node with no properties
@@ -91,6 +93,7 @@ async def test_writes_node_and_edge_parquet_with_expected_columns(tmp_path):
     assert evan["type"] == "Person"
     assert evan["followers_count"] == 5  # integers stay integers
     assert evan["following_count"] == 7
+    assert evan["depth"] == 2  # crawl depth rides along, integer, null if absent
     assert isinstance(evan["id"], int)
 
     # the directed edge is written as the two endpoint ids
