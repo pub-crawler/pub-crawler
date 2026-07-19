@@ -20,6 +20,10 @@ node_schema = pa.schema(
         ("followers_count", pa.int32()),
         ("following_count", pa.int32()),
         ("depth", pa.int32()),
+        ("followers_pages_complete", pa.bool_()),
+        ("following_pages_complete", pa.bool_()),
+        ("followers_members_shared", pa.bool_()),
+        ("following_members_shared", pa.bool_()),
     ]
 )
 
@@ -43,6 +47,12 @@ async def snapshot_nodes(G, node_filename):
         "followers_count",
         "following_count",
         "depth"
+    ]
+    boolean_props = [
+        "followers_pages_complete",
+        "following_pages_complete",
+        "followers_members_shared",
+        "following_members_shared",
     ]
     other_props = ["hostname", "preferred_username", "name", "type"]
     batch = collections.defaultdict(list)
@@ -76,6 +86,12 @@ async def snapshot_nodes(G, node_filename):
                     value = None
                 if isinstance(value, int) and 0 <= value <= MAX_INT32:
                     batch[prop].append(value)
+                else:
+                    batch[prop].append(None)
+            for prop in boolean_props:
+                pvalue = props.get(prop, None)
+                if isinstance(pvalue, bool):
+                    batch[prop].append(pvalue)
                 else:
                     batch[prop].append(None)
             for prop in other_props:

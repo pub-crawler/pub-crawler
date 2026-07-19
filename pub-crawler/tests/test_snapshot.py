@@ -5,7 +5,9 @@ snapshot iterates a Graph (all_nodes -> (id, label, props), all_edges ->
 
   nodes: one row per node, columns
     id, label, hostname, preferred_username, name, published, type,
-    followers_count, following_count, depth
+    followers_count, following_count, depth,
+    followers_pages_complete, following_pages_complete,
+    followers_members_shared, following_members_shared
   edges: one row per edge, columns `from` and `to` (integer node ids)
 
 The node columns beyond id/label are read from each node's `props` by the
@@ -44,6 +46,10 @@ NODE_COLUMNS = [
     "followers_count",
     "following_count",
     "depth",
+    "followers_pages_complete",
+    "following_pages_complete",
+    "followers_members_shared",
+    "following_members_shared",
 ]
 EDGE_COLUMNS = ["from", "to"]
 
@@ -67,6 +73,10 @@ async def test_writes_node_and_edge_parquet_with_expected_columns(tmp_path):
             "followers_count": 5,
             "following_count": 7,
             "depth": 2,
+            "followers_pages_complete": True,
+            "following_pages_complete": False,
+            "followers_members_shared": True,
+            "following_members_shared": False,
         },
     )
     await g.ensure_node(ALICE)  # a node with no properties
@@ -94,6 +104,13 @@ async def test_writes_node_and_edge_parquet_with_expected_columns(tmp_path):
     assert evan["followers_count"] == 5  # integers stay integers
     assert evan["following_count"] == 7
     assert evan["depth"] == 2  # crawl depth rides along, integer, null if absent
+    # completeness/sharedness: booleans survive as booleans, False stays
+    # distinct from null-absent (ALICE has all four as None)
+    assert evan["followers_pages_complete"] is True
+    assert evan["following_pages_complete"] is False
+    assert evan["followers_members_shared"] is True
+    assert evan["following_members_shared"] is False
+    assert nodes[ALICE]["followers_pages_complete"] is None
     assert isinstance(evan["id"], int)
 
     # the directed edge is written as the two endpoint ids
