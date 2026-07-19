@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
+    "adjusttext>=1.4.0",
     "fastparquet>=2026.5.0",
     "igraph>=1.0.0",
     "ipykernel>=7.3.0",
