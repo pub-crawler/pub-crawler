@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - "depth" member to snapshot output.
+- "followers/following_pages_complete" members to snapshot output.
+- "followers/following_members_shared" members to snapshot output.
 
 ### Fixed
 
