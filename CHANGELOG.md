@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+
+- "depth" member to snapshot output.
+
 ### Fixed
 
 - Inline items in collections are treated as completed page chains.
