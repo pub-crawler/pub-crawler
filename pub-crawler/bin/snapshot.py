@@ -43,11 +43,7 @@ MAX_INT32 = 2**31 - 1
 
 async def snapshot_nodes(G, node_filename):
     max_id = -1
-    int_props = [
-        "followers_count",
-        "following_count",
-        "depth"
-    ]
+    int_props = ["followers_count", "following_count", "depth"]
     boolean_props = [
         "followers_pages_complete",
         "following_pages_complete",
