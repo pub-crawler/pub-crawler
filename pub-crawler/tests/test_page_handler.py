@@ -176,8 +176,9 @@ async def test_adds_a_follow_edge_per_member(direction, edge):
 
     assert await graph.has_edge(*edge)
     assert len([e async for e in graph.all_edges()]) == 1
-    # The member is a BARE endpoint node — ActorHandler enriches it later.
-    assert await graph.get_node_properties(ITEM_A) == {}
+    # The member gets its first-discovery depth (job depth + 1) at ingest;
+    # ActorHandler enriches the rest later.
+    assert await graph.get_node_properties(ITEM_A) == {"depth": DEPTH + 1}
 
 
 @pytest.mark.parametrize(

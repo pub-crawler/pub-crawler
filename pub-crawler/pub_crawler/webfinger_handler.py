@@ -12,6 +12,9 @@ class WebfingerHandler(Handler):
         wf = job["webfinger"]
         actor_id = await self.client.get_actor_id(wf)
         await self.graph.ensure_node(actor_id)
+        depth = await self.graph.get_node_property(actor_id, "depth")
+        if depth is None:
+            await self.graph.set_node_property(actor_id, "depth", 0)
         last_fetch_date = await self.graph.get_node_property(
             actor_id, "last_fetch_date"
         )
