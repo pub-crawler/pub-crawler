@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Updated
+## [0.12.1] - 2026-07-20
+
+### Fixed
 
 - Write "depth" of an actor at discovery time in page, collection, or webfinger job handler.
 
@@ -304,7 +306,8 @@ keepalive connections in ActivityPubClient and WebfingerClient
 - Crawler max depth defaults to 1.
 - `DatabaseGraph` no longer uses its own transaction.
 
-[Unreleased]: https://github.com/pub-crawler/pub-crawler/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/pub-crawler/pub-crawler/compare/v0.12.1...HEAD
+[0.12.1]: https://github.com/pub-crawler/pub-crawler/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/pub-crawler/pub-crawler/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/pub-crawler/pub-crawler/compare/v0.10.1...v0.11.0
 [0.10.1]: https://github.com/pub-crawler/pub-crawler/compare/v0.10.0...v0.10.1
