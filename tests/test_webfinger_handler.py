@@ -1,8 +1,9 @@
 """Tests for WebfingerHandler (step 4) — resolve a seed acct, enqueue its actor.
 
 Step-4 contract: handle resolves the webfinger address to an actor id, adds it
-to the graph as a bare node (no attrs — ActorHandler stamps those later), and
-enqueues an actor job at depth 0.
+to the graph stamped with its seed depth (0, set-if-absent — a node already
+discovered deeper keeps its existing depth), and enqueues an actor job at
+depth 0. ActorHandler stamps the rest of the metadata later.
 
 Pure unit tests via DI: a fake async webfinger client, a recording
 FakeDispatcher (jobs land in a list), a FakeGraph. No HTTP.
@@ -39,7 +40,7 @@ class FakeWebfingerClient:
         return NA_RESULT
 
 
-async def test_adds_the_actor_id_as_a_bare_node():
+async def test_adds_the_actor_id_stamped_with_seed_depth():
     client = FakeWebfingerClient()
     graph = FakeGraph()
 
@@ -47,8 +48,21 @@ async def test_adds_the_actor_id_as_a_bare_node():
 
     assert client.calls == [ACCT]
     assert await graph.has_node(ACTOR_ID)
-    # Still bare — ActorHandler fills in the metadata when it fetches.
-    assert await graph.get_node_properties(ACTOR_ID) == {}
+    # Only depth (0) — ActorHandler fills in the rest when it fetches.
+    assert await graph.get_node_properties(ACTOR_ID) == {"depth": 0}
+
+
+async def test_existing_depth_is_not_overwritten():
+    # A seed discovered via someone's page BEFORE its webfinger ran keeps that
+    # first-discovery depth; resolving the seed does not force it back to 0.
+    client = FakeWebfingerClient()
+    graph = FakeGraph()
+    await graph.ensure_node(ACTOR_ID)
+    await graph.set_node_property(ACTOR_ID, "depth", 2)
+
+    await WebfingerHandler(client, FakeDispatcher(), graph).handle(WF_JOB)
+
+    assert await graph.get_node_property(ACTOR_ID, "depth") == 2
 
 
 async def test_enqueues_the_actor_at_depth_zero():

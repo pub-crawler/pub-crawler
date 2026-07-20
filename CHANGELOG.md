@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Updated
+
+- Write "depth" of an actor at discovery time in page, collection, or webfinger job handler.
+
 ## [0.12.0] - 2026-07-19
 
 ### Added

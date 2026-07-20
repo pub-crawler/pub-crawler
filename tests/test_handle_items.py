@@ -123,3 +123,63 @@ async def test_empty_items_is_a_noop():
 
     assert dis.enqueued == []
     assert [e async for e in graph.all_edges()] == []
+
+
+# ---------------------------------------------------------------------------
+# depth on discovery: a newly-discovered member node is stamped with its
+# first-discovery depth (depth+1, the same depth as the actor job it gets).
+# Set-if-absent — a node that already carries a depth (re-discovered deeper, or
+# already fetched) keeps its existing depth; first-discovery is never clobbered.
+# ---------------------------------------------------------------------------
+
+
+async def test_new_member_gets_first_discovery_depth():
+    graph = FakeGraph()
+    dis = FakeDispatcher()
+
+    await run(graph, dis, [MEMBER_A], depth=1)
+
+    assert await graph.get_node_property(MEMBER_A, "depth") == 2  # depth + 1
+
+
+async def test_new_member_depth_matches_its_actor_job():
+    # the stamped depth equals the depth its enqueued actor job carries
+    graph = FakeGraph()
+    dis = FakeDispatcher()
+
+    await run(graph, dis, [MEMBER_A], depth=3)
+
+    assert await graph.get_node_property(MEMBER_A, "depth") == 4
+    assert actor_jobs(dis) == [actor_job(MEMBER_A, 4)]
+
+
+async def test_existing_depth_is_not_overwritten():
+    # a member re-discovered deeper keeps its shallower first-discovery depth
+    graph = FakeGraph()
+    dis = FakeDispatcher()
+    await graph.ensure_node(MEMBER_A)
+    await graph.set_node_property(MEMBER_A, "depth", 1)
+
+    await run(graph, dis, [MEMBER_A], depth=5)  # this path would be depth 6
+
+    assert await graph.get_node_property(MEMBER_A, "depth") == 1  # unchanged
+
+
+async def test_fetched_member_depth_untouched():
+    # an already-fetched node (last_fetch_date + its own depth) is not
+    # re-stamped: no job, and no depth clobber
+    graph = FakeGraph()
+    dis = FakeDispatcher()
+    await graph.ensure_node(MEMBER_A)
+    await graph.set_node_properties(
+        MEMBER_A,
+        {
+            "depth": 0,
+            "last_fetch_date": "2026-07-01T00:00:00Z",
+        },
+    )
+
+    await run(graph, dis, [MEMBER_A], depth=5)
+
+    assert await graph.get_node_property(MEMBER_A, "depth") == 0
+    assert actor_jobs(dis) == []  # already fetched -> no job

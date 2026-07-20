@@ -19,6 +19,12 @@ async def handle_items(graph, dispatcher, items, owner_id, direction, depth):
         await graph.ensure_from_edges(owner_id, ids)
         await graph.set_from_edges_property(owner_id, ids, f"from_{direction}", True)
 
+    depths = await graph.get_nodes_property(ids, "depth")
+
+    no_depths = ids - depths.keys()
+
+    await graph.set_nodes_property(list(no_depths), "depth", depth + 1)
+
     last_fetch_dates = await graph.get_nodes_property(ids, "last_fetch_date")
 
     not_fetched = ids - last_fetch_dates.keys()
