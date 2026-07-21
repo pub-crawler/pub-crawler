@@ -1,0 +1,55 @@
+{{- if .Values.fixupCrcTiebreak.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "pub-crawler.fullname" . }}-fixup-crc-tiebreak
+  labels:
+    {{- include "pub-crawler.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    # Rewrites `depth|type|ts|job` members to `depth|type|crc|ts|job` for the
+    # crc32-tiebreak dispatcher. Same tier as fixup-zero-score (-2); order
+    # between the two doesn't matter. Last step before the crawler starts.
+    "helm.sh/hook-weight": "-2"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: {{ .Values.job.backoffLimit }}
+  template:
+    metadata:
+      labels:
+        {{- include "pub-crawler.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: fixup-crc-tiebreak
+    spec:
+      restartPolicy: Never
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: fixup-crc-tiebreak
+          image: {{ include "pub-crawler.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["python", "fixup/fixup_crc_tiebreak.py"]
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          env:
+            {{- include "pub-crawler.redisEnv" . | nindent 12 }}
+          {{- with .Values.fixupCrcTiebreak.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

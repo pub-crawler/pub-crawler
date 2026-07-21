@@ -170,6 +170,28 @@ fixupZeroScore:
       cpu: 250m
       memory: 128Mi
 
+# Crc-tiebreak migration: fixup_crc_tiebreak.py rewrites every queue member from
+# the old `depth|type|ts|job` form to `depth|type|crc|ts|job` — splicing in the
+# crc32(job_id) tiebreak the dispatcher now sorts on (shuffling same-host jobs
+# within a depth/type band). REQUIRED for the crc32 dispatcher deploy: its
+# _member_to_job unpacks 5 fields and errors on the old 4-field members. Pre-
+# install/pre-upgrade hook at weight -2, same tier as fixupZeroScore (order
+# between the two doesn't matter — one touches scores, the other member strings;
+# idempotent via the ISO-`T` check, safe to re-run). Redis-only. Run with the
+# OLD crawler STOPPED (it rewrites members in place) — the chart can't enforce
+# that, so delete the running crawler Job before upgrading. DISABLED by default;
+# `--set fixupCrcTiebreak.enabled=true` on the crc32-dispatcher upgrade, then
+# drop the flag.
+fixupCrcTiebreak:
+  enabled: false
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 128Mi
+
 # HTTP-status recovery: recover_http_status.py re-enqueues work lost to
 # recoverable HTTP status deaths (429/5xx recorded on the node, no failed-set
 # entry): failed actors at seed/stamped/reconstructed depth, failed collections
