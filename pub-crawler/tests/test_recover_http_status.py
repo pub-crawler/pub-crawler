@@ -52,9 +52,9 @@ def dispatcher():
 
 
 async def queued_jobs(d):
-    """Jobs on the queue ZSET, parsed from `depth|type|ts|job` members."""
+    """Jobs on the queue ZSET, parsed from `depth|type|crc|ts|job` members."""
     members = await d.redis.zrange(QUEUE, 0, -1)
-    return [json.loads(m.decode().split("|", 3)[3]) for m in members]
+    return [json.loads(m.decode().split("|", 4)[4]) for m in members]
 
 
 async def failed_actor(g, label, status=429, **props):

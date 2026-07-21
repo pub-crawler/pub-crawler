@@ -3,7 +3,7 @@ import asyncio
 from datetime import datetime, timezone
 from pub_crawler.job_id import job_id
 import orjson
-
+from zlib import crc32
 
 def _epoch_ms():
     return time.time() * 1000
@@ -155,10 +155,14 @@ class Dispatcher:
         else:
             raise Exception(f"unrecognized job type {job_type}")
         ts = iso_utc(self.now())
+        jid = job_id(job)
+        if jid is None:
+            raise Exception(f"No jid for job {job}")
+        crc = crc32(jid.encode())
         depth = max(min(depth, 99), 0)
         job_type_code = max(min(job_type_code, 99), 0)
-        return f"{depth:02d}|{job_type_code:02d}|{ts}|{self._job_to_str(job)}"
+        return f"{depth:02d}|{job_type_code:02d}|{crc:08x}|{ts}|{self._job_to_str(job)}"
 
     def _member_to_job(self, member):
-        _, _, _, job = member.decode().split("|", 3)
+        _, _, _, _, job = member.decode().split("|", 4)
         return self._str_to_job(job)

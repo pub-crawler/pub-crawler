@@ -67,9 +67,9 @@ async def crash(d, job):
 
 async def queued_jobs(d):
     """The jobs currently on the queue ZSET, parsed back out of the
-    `depth|type|ts|job` member format (see Dispatcher._job_to_member)."""
+    `depth|type|crc|ts|job` member format (see Dispatcher._job_to_member)."""
     members = await d.redis.zrange(QUEUE, 0, -1)
-    return [json.loads(member.decode().split("|", 3)[3]) for member in members]
+    return [json.loads(member.decode().split("|", 4)[4]) for member in members]
 
 
 async def collect_failed(d):
