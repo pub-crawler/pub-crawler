@@ -40,7 +40,7 @@ class WebfingerClient:
         origin = f"https://{hostname}"
         url = f"{origin}/.well-known/webfinger?resource={resource}"
         headers = {
-            "User-Agent": "crawler.pub/0.12.1 (https://crawler.pub/; evanp@gatech.edu)",
+            "User-Agent": "crawler.pub/0.13.0 (https://crawler.pub/; evanp@gatech.edu)",
             "Accept": "application/jrd+json;q=1.0,application/json;q=0.5",
         }
         await self.general.acquire(origin)
