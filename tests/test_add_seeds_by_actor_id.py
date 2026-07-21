@@ -11,7 +11,7 @@ construction, so the tests pass a real throwaway key. The graph is unused during
 seeding, so None is passed for it (as add_seeds hands its handler a None graph).
 
 A FakeAsyncRedis stands in for Valkey; the queue is read back and members parsed
-the same way Dispatcher.enqueue writes them ("depth|type|ts|job").
+the same way Dispatcher.enqueue writes them ("depth|type|crc|ts|job").
 """
 
 import json
@@ -59,10 +59,10 @@ async def run(seeds_path, r):
 
 async def queued_jobs(r):
     """The jobs currently on the queue ZSET, in score order, parsed back.
-    Members are `depth|type|ts|job` — the job JSON is after the 3rd `|`."""
+    Members are `depth|type|crc|ts|job` — the job JSON is after the 4th `|`."""
     jobs = []
     for member in await r.zrange(QUEUE, 0, -1):
-        jobs.append(json.loads(member.decode().split("|", 3)[3]))
+        jobs.append(json.loads(member.decode().split("|", 4)[4]))
     return jobs
 
 
@@ -73,11 +73,14 @@ async def test_enqueues_an_actor_job_per_id(tmp_path):
 
     await run(seeds, r)
 
-    # FIFO by enqueue order; each id becomes a depth-0 actor job.
-    assert await queued_jobs(r) == [
-        {"job_type": "actor", "actor_id": X, "depth": 0},
-        {"job_type": "actor", "actor_id": Y, "depth": 0},
-    ]
+    # Order isn't promised (same-class jobs shuffle by the crc32 tiebreak);
+    # each id becomes a depth-0 actor job.
+    assert {
+        (j["job_type"], j["actor_id"], j["depth"]) for j in await queued_jobs(r)
+    } == {
+        ("actor", X, 0),
+        ("actor", Y, 0),
+    }
 
 
 async def test_skips_blank_and_whitespace_lines(tmp_path):
@@ -87,7 +90,7 @@ async def test_skips_blank_and_whitespace_lines(tmp_path):
 
     await run(seeds, r)
 
-    assert [j["actor_id"] for j in await queued_jobs(r)] == [X, Y]
+    assert {j["actor_id"] for j in await queued_jobs(r)} == {X, Y}
 
 
 async def test_follow_up_seeds_append_to_an_existing_queue(tmp_path):

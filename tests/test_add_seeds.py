@@ -31,11 +31,11 @@ def no_http(request):
 
 async def queued_jobs(r):
     """The jobs currently on the queue ZSET, in score order, parsed back.
-    Members are `depth|type|ts|job` (see Dispatcher._job_to_member)."""
+    Members are `depth|type|crc|ts|job` (see Dispatcher._job_to_member)."""
     members = await r.zrange(QUEUE, 0, -1)
     jobs = []
     for member in members:
-        job_json = member.decode().split("|", 3)[3]
+        job_json = member.decode().split("|", 4)[4]
         jobs.append(json.loads(job_json))
     return jobs
 
@@ -47,11 +47,12 @@ async def test_enqueues_a_webfinger_job_per_seed(tmp_path):
 
     await add_seeds(str(seeds), r, transport=httpx.MockTransport(no_http))
 
-    # FIFO by enqueue order (the counter tiebreaks the equal ~now scores).
-    assert await queued_jobs(r) == [
-        {"job_type": "webfinger", "webfinger": "evan@cosocial.example"},
-        {"job_type": "webfinger", "webfinger": "alice@social.example"},
-    ]
+    # Order isn't promised — same-class jobs are shuffled by the crc32 tiebreak
+    # — so compare membership, not sequence.
+    assert {j["webfinger"] for j in await queued_jobs(r)} == {
+        "evan@cosocial.example",
+        "alice@social.example",
+    }
 
 
 async def test_skips_blank_and_whitespace_lines(tmp_path):
@@ -61,8 +62,8 @@ async def test_skips_blank_and_whitespace_lines(tmp_path):
 
     await add_seeds(str(seeds), r, transport=httpx.MockTransport(no_http))
 
-    webfingers = [j["webfinger"] for j in await queued_jobs(r)]
-    assert webfingers == ["evan@cosocial.example", "alice@social.example"]
+    webfingers = {j["webfinger"] for j in await queued_jobs(r)}
+    assert webfingers == {"evan@cosocial.example", "alice@social.example"}
 
 
 async def test_follow_up_seeds_append_to_an_existing_queue(tmp_path):

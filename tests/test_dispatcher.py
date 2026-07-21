@@ -3,7 +3,9 @@ registry used at dispatch time.
 
   - set_handler(job_type, handler): register (needed for dispatch(), NOT enqueue).
   - enqueue(job): put the job on the queue at a constant score (0); ordering
-    is entirely the member prefix: depth -> job type -> enqueue time (FIFO).
+    is entirely the member prefix: depth -> job type -> hash(job_id). The
+    stable job-id hash shuffles same-class jobs so a depth/type band presents
+    a diverse host mix at the tip instead of long same-host stripes.
   - get(): pop the tip + lease it, full stop. No availability check, no
     re-queue — a throttled job is handed out and the WORKER waits in the
     client's acquire(). The dispatcher is out of the time business.
@@ -115,70 +117,100 @@ async def test_enqueue_works_with_no_handlers_registered():
 
 
 # ---------------------------------------------------------------------------
-# Priority: get() returns jobs in depth -> job-type -> FIFO order. Availability
-# never reorders anything — a job's throttle state is invisible to the queue.
+# Priority: get() returns jobs in depth -> job-type -> hash(job_id) order. The
+# intra-class tiebreaker is a STABLE hash of the job id (deterministic, not a
+# fresh random per enqueue), so same-class jobs are shuffled by id -- breaking
+# up same-host stripes so a depth/type band shows a diverse host mix at the
+# tip. Availability never reorders anything.
 # ---------------------------------------------------------------------------
 
 
-async def test_get_ignores_availability_and_stays_fifo_within_a_class():
-    # Jobs whose handler would report wildly different next_available values
-    # (carried in `na`, which the old contract sorted by) come back in pure
-    # insertion order: availability plays no role in queue position.
-    h = FakeHandler()
+async def test_get_ignores_availability():
+    # Availability isn't a sort key (and isn't even consulted -- see the
+    # poisoned-handler tests). Jobs with wildly different `na` all come back;
+    # na neither orders nor drops anything.
     dis = Dispatcher(fake_redis())
-    dis.set_handler("actor", h)
+    dis.set_handler("actor", FakeHandler())
 
     for na in (300, 100, 200):
         await dis.enqueue(
             {"job_type": "actor", "actor_id": f"https://x.example/users/{na}", "na": na}
         )
 
-    order = [(await dis.get())["na"] for _ in range(3)]
-    assert order == [300, 100, 200]  # insertion order, NOT availability order
+    drained = [(await dis.get())["na"] for _ in range(3)]
+    assert sorted(drained) == [100, 200, 300]  # all present; na gated nothing
 
 
-async def test_get_breaks_same_class_ties_by_insertion_order():
-    h = FakeHandler(na=100)
+async def test_intra_class_order_ignores_insertion_order():
+    # The intra-class tiebreaker is a hash of the job id, NOT insertion order:
+    # the same jobs enqueued in OPPOSITE orders drain identically. (Under FIFO
+    # the two drains would differ -- so this pins "not FIFO" without needing to
+    # know the hash values.)
+    a = {"job_type": "actor", "actor_id": "https://x.example/users/a", "tag": "a"}
+    b = {"job_type": "actor", "actor_id": "https://x.example/users/b", "tag": "b"}
+    c = {"job_type": "actor", "actor_id": "https://x.example/users/c", "tag": "c"}
+
+    fwd = Dispatcher(fake_redis())
+    fwd.set_handler("actor", FakeHandler())
+    for j in (a, b, c):
+        await fwd.enqueue(j)
+    order_fwd = [(await fwd.get())["tag"] for _ in range(3)]
+
+    rev = Dispatcher(fake_redis())
+    rev.set_handler("actor", FakeHandler())
+    for j in (c, b, a):
+        await rev.enqueue(j)
+    order_rev = [(await rev.get())["tag"] for _ in range(3)]
+
+    assert order_fwd == order_rev  # ordering follows the job-id hash, not arrival
+
+
+async def test_intra_class_order_is_deterministic():
+    # A STABLE hash, not a fresh random: the same jobs drain in the same order
+    # every time (a per-enqueue random would differ run to run).
+    jobs = [
+        {"job_type": "actor", "actor_id": f"https://x.example/users/{t}", "tag": t}
+        for t in ("p", "q", "r", "s")
+    ]
+
+    d1 = Dispatcher(fake_redis())
+    d1.set_handler("actor", FakeHandler())
+    for j in jobs:
+        await d1.enqueue(j)
+    first = [(await d1.get())["tag"] for _ in range(4)]
+
+    d2 = Dispatcher(fake_redis())
+    d2.set_handler("actor", FakeHandler())
+    for j in jobs:
+        await d2.enqueue(j)
+    second = [(await d2.get())["tag"] for _ in range(4)]
+
+    assert first == second
+
+
+async def test_hash_tiebreak_ranks_below_depth_and_type():
+    # The hash only breaks ties WITHIN a depth+type band; it never lifts a
+    # deeper (or later-type) job over a shallower one, whatever the hashes are.
     dis = Dispatcher(fake_redis())
-    dis.set_handler("actor", h)
-
+    dis.set_handler("actor", FakeHandler())
     await dis.enqueue(
         {
             "job_type": "actor",
-            "actor_id": "https://x.example/users/first",
-            "tag": "first",
+            "actor_id": "https://x.example/users/deep",
+            "depth": 2,
+            "tag": "deep",
         }
     )
     await dis.enqueue(
         {
             "job_type": "actor",
-            "actor_id": "https://x.example/users/second",
-            "tag": "second",
+            "actor_id": "https://x.example/users/shallow",
+            "depth": 1,
+            "tag": "shallow",
         }
     )
 
-    # Equal priority -> FIFO. Also proves the job dicts are never compared:
-    # a missing tiebreaker would raise TypeError here.
-    assert (await dis.get())["tag"] == "first"
-    assert (await dis.get())["tag"] == "second"
-
-
-async def test_get_ties_stay_fifo_across_a_digit_width_boundary():
-    # The FIFO tiebreaker must order numerically, not lexicographically. Enqueue
-    # enough same-class jobs that the insertion counter crosses a power-of-10
-    # boundary (0..10): lexicographically "10" < "2", so a string-compared
-    # tiebreaker would float the 11th job ahead of the 3rd. FIFO must hold.
-    h = FakeHandler(na=100)
-    dis = Dispatcher(fake_redis())
-    dis.set_handler("actor", h)
-
-    for i in range(11):
-        await dis.enqueue(
-            {"job_type": "actor", "actor_id": f"https://x.example/users/{i}", "tag": i}
-        )
-
-    order = [(await dis.get())["tag"] for _ in range(11)]
-    assert order == list(range(11))
+    assert (await dis.get())["tag"] == "shallow"  # depth wins over the hash
 
 
 # ---------------------------------------------------------------------------
@@ -733,7 +765,7 @@ async def test_enqueue_raises_on_an_unidentifiable_job():
 # ---------------------------------------------------------------------------
 # Queue ordering with depth + job type: get() must hand back jobs ordered by
 #   depth (shallowest) -> job type (webfinger < actor < collection < page)
-#   -> FIFO (insertion order).
+#   -> hash(job_id) (a stable shuffle within a depth+type band).
 # Availability is NOT a sort key at any rank. Black-box: these assert get()
 # ORDER only, independent of how the keys are encoded (member prefix vs score).
 #
@@ -743,8 +775,7 @@ async def test_enqueue_raises_on_an_unidentifiable_job():
 #     precedence call -- say the word and I'll add it.
 #   - webfinger jobs carry no `depth`; assumed to sort as depth 0 (so type
 #     precedence lands them first among the shallowest).
-#   - a missing `depth` defaults gracefully (uniform no-depth jobs still order
-#     FIFO -- which is why the basic queue tests keep passing).
+#   - a missing `depth` defaults gracefully.
 # ---------------------------------------------------------------------------
 
 
@@ -817,13 +848,20 @@ async def test_webfinger_sorts_ahead_of_a_same_depth_actor():
     assert await drain_tags(dis, 2) == ["wf", "ac"]
 
 
-async def test_full_tie_falls_back_to_fifo():
-    # same depth and type -> insertion order preserved.
-    dis = ordering_dispatcher()
-    await dis.enqueue(oj("actor", "first", depth=1))
-    await dis.enqueue(oj("actor", "second", depth=1))
+async def test_full_tie_broken_by_the_job_id_hash():
+    # same depth and type -> the stable job-id hash orders them, NOT insertion:
+    # enqueued in opposite orders, two same-class jobs drain identically.
+    fwd = ordering_dispatcher()
+    await fwd.enqueue(oj("actor", "first", depth=1))
+    await fwd.enqueue(oj("actor", "second", depth=1))
+    order_fwd = await drain_tags(fwd, 2)
 
-    assert await drain_tags(dis, 2) == ["first", "second"]
+    rev = ordering_dispatcher()
+    await rev.enqueue(oj("actor", "second", depth=1))
+    await rev.enqueue(oj("actor", "first", depth=1))
+    order_rev = await drain_tags(rev, 2)
+
+    assert order_fwd == order_rev
 
 
 async def test_depth_orders_numerically_not_lexicographically():
