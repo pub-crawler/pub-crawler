@@ -44,6 +44,27 @@ migrations = {
     "create_edge_to_node_idx": """
   CREATE INDEX edge_to_node_idx ON edge (to_node);
   """,
+    "create_host_table": """
+  CREATE TABLE host (
+    id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    hostname VARCHAR(256) UNIQUE NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+  );
+  """,
+    "create_host_property_table": """
+  CREATE TABLE host_property (
+    id INT NOT NULL,
+    name VARCHAR(32) NOT NULL,
+    value JSONB NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id, name),
+    FOREIGN KEY (id) REFERENCES host (id) ON DELETE CASCADE
+  );
+  """,
+    "create_host_prop_name_value_idx": """
+  CREATE INDEX host_property_name_value_idx ON host_property (name, value);
+  """,
 }
 
 
