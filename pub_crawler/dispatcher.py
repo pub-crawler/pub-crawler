@@ -5,6 +5,7 @@ from pub_crawler.job_id import job_id
 import orjson
 from zlib import crc32
 
+
 def _epoch_ms():
     return time.time() * 1000
 

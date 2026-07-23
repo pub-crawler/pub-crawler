@@ -11,8 +11,10 @@ LOG_INTERVAL = 10_000
 SCAN_COUNT = 1000
 WRITE_BATCH = 1000
 
+
 def is_old_member(member):
-    return 'T' in member.split("|", 3)[2]
+    return "T" in member.split("|", 3)[2]
+
 
 async def write_batch(r, batch):
     async with r.pipeline(transaction=False) as pipe:
@@ -28,6 +30,7 @@ async def write_batch(r, batch):
             pipe.zadd(QUEUE, {newmember: 0})
             pipe.zrem(QUEUE, member)
         await pipe.execute()
+
 
 async def fixup_crc_tiebreak(r, batch_size=WRITE_BATCH):
     tried = 0
