@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- host, host_property table to database
+- host and host property methods to DatabaseGraph
+
 ## [0.13.0] - 2026-07-21
 
 ### Changed
