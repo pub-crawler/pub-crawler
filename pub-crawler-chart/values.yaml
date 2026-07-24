@@ -255,6 +255,21 @@ crestWatch:
       cpu: 200m
       memory: 128Mi
 
+# Queue-mix: every 30 min, append the (depth, job_type) mix of the pending queue +
+# in-flight jobs to queue-mix.csv on the persistence volume, in long format
+# (timestamp,depth,job_type,count) so new depths need no header change. Same RWO
+# caveat as crest-watch: a sample that collides with the daily snapshot is skipped.
+queueMix:
+  enabled: true
+  schedule: "*/30 * * * *"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
 # Persistent volume for snapshot GML output.
 persistence:
   enabled: true
