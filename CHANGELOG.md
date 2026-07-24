@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - host, host_property table to database
 - host and host property methods to DatabaseGraph
+- NodeinfoClient class
 
 ## [0.13.0] - 2026-07-21
 
