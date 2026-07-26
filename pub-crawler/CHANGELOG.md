@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - host, host_property table to database
 - host and host property methods to DatabaseGraph
 - NodeinfoClient class
+- fixup_seen_hash fixup script
+
+### Changed
+
+- Seen job check changed from a set of job ids to a set of job id hashes
 
 ## [0.13.0] - 2026-07-21
 
