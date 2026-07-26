@@ -20,11 +20,13 @@ Assumptions to flag if the shape differs:
 """
 
 import asyncio
+import hashlib
 
 import pytest
 from fakeredis import FakeAsyncRedis, FakeServer
 
-from pub_crawler.dispatcher import Dispatcher, MAX_INFLIGHT, QUEUE
+from pub_crawler.dispatcher import Dispatcher, MAX_INFLIGHT, QUEUE, SEEN, SEEN_HASHED
+from pub_crawler.job_id import job_id
 
 
 def fake_redis():
@@ -654,13 +656,15 @@ async def test_stop_is_idempotent():
 
 
 # ---------------------------------------------------------------------------
-# seen()/enqueue de-dup: enqueue() records job_id(job) in a Redis set; seen(job)
-# tests membership, so handlers can skip re-queuing duplicates. NOTHING un-sees
-# -- queued, in flight, failed, or done, the id stays in the set. Identity is by
-# job_id, so the SAME resource reached again (e.g. a deeper crawl) reads as
-# already seen. (These use job_id-shaped actor jobs -- a real actor_id field --
-# since enqueue/seen run job_id() on them, unlike the opaque actor_job() above
-# that only the queue mechanics need.)
+# seen()/enqueue de-dup: enqueue() records a fixed-width hash of job_id(job) in
+# the SEEN_HASHED set; seen(job) tests membership, so handlers can skip
+# re-queuing duplicates. The HASH is stored, not the full id string, to cut
+# Redis memory -- SEEN is a pure oracle (never read by content), so this is
+# lossless. NOTHING un-sees -- queued, in flight, failed, or done, the job stays
+# seen. Identity is by job_id, so the SAME resource reached again (e.g. a deeper
+# crawl) reads as already seen. (These use job_id-shaped actor jobs -- a real
+# actor_id field -- since enqueue/seen run job_id() on them, unlike the opaque
+# actor_job() above that only the queue mechanics need.)
 # ---------------------------------------------------------------------------
 
 
@@ -760,6 +764,146 @@ async def test_enqueue_raises_on_an_unidentifiable_job():
 
     with pytest.raises(Exception):
         await dis.enqueue({"job_type": "actor", "depth": 1})
+
+
+# --- hashing: the oracle stores an 8-byte hash of job_id, in SEEN_HASHED ------
+
+
+async def test_enqueue_records_in_seen_hashed_not_the_legacy_key():
+    r = fake_redis()
+    await Dispatcher(r).enqueue(actor_seed())
+    assert await r.scard(SEEN_HASHED) == 1
+    assert await r.scard(SEEN) == 0  # the legacy string key is no longer written
+
+
+async def test_a_legacy_string_entry_does_not_count_as_seen():
+    # A pre-migration id string sitting in the old SEEN key must NOT register as
+    # seen -- only the hashed entry does. This is exactly why the migration is
+    # required, not optional.
+    r = fake_redis()
+    dis = Dispatcher(r)
+    job = actor_seed()
+    await r.sadd(SEEN, job_id(job))
+    assert not await dis.seen(job)
+    await dis.enqueue(job)
+    assert await dis.seen(job)
+
+
+async def test_stored_member_is_a_hash_not_the_raw_job_id():
+    r = fake_redis()
+    job = actor_seed()
+    await Dispatcher(r).enqueue(job)
+    assert not await r.sismember(SEEN_HASHED, job_id(job))
+    assert not await r.sismember(SEEN_HASHED, job_id(job).encode())
+
+
+async def test_stored_member_is_eight_bytes():
+    # Agreed width: 64-bit / 8 raw bytes. (Change here if the width changes.)
+    r = fake_redis()
+    await Dispatcher(r).enqueue(actor_seed())
+    (member,) = await r.smembers(SEEN_HASHED)
+    assert len(member) == 8
+
+
+async def test_the_hash_is_stable_across_dispatcher_instances():
+    # The migration fixup runs in a SEPARATE process; its hash must match the
+    # crawler's. Same Redis, two Dispatchers -> one sees what the other enqueued.
+    r = fake_redis()
+    job = actor_seed()
+    await Dispatcher(r).enqueue(job)
+    assert await Dispatcher(r).seen(job)
+
+
+async def test_seen_key_is_blake2b64_of_the_job_id():
+    # PINNED to the agreed hash: blake2b, 8-byte digest of the job-id string.
+    # Deliberate -- every other test here also passes with builtin hash(), which
+    # is per-process salted and would silently break the fixup<->crawler match.
+    r = fake_redis()
+    job = actor_seed()
+    await Dispatcher(r).enqueue(job)
+    expected = hashlib.blake2b(job_id(job).encode(), digest_size=8).digest()
+    assert await r.sismember(SEEN_HASHED, expected)
+
+
+# --- enqueue_if_unseen(): atomic test-and-set discovery enqueue ---------------
+# Closes the check-then-act race in the discovery paths (handle_items,
+# collection_handler): instead of seen()-then-enqueue() as two ops, the atomic
+# SADD on SEEN_HASHED IS the gate -- only the caller that newly adds the hash
+# enqueues the member, so two workers discovering the same successor at once
+# produce ONE queue entry, not two. Plain enqueue() stays unconditional for the
+# re-enqueue paths (expired/recovered/unfail) that must re-queue an already-seen
+# job.
+#
+# Assumptions to flag if they differ:
+#   - returns truthy when it enqueued (job was new), falsy when it skipped.
+#   - marks + enqueues via the same SEEN_HASHED / queue encoding as enqueue().
+#   - raises on an unidentifiable job, like seen()/enqueue().
+# -----------------------------------------------------------------------------
+
+
+async def test_enqueue_if_unseen_enqueues_and_marks_a_new_job():
+    r = fake_redis()
+    dis = Dispatcher(r)
+    job = actor_seed()
+
+    enqueued = await dis.enqueue_if_unseen(job)
+
+    assert enqueued
+    assert await dis.seen(job)
+    assert await r.zcard(QUEUE) == 1
+
+
+async def test_enqueue_if_unseen_skips_a_job_already_seen_via_enqueue():
+    # Shares the SEEN_HASHED oracle with plain enqueue(): a job marked seen by an
+    # earlier enqueue() is not re-queued.
+    r = fake_redis()
+    dis = Dispatcher(r)
+    job = actor_seed()
+    await dis.enqueue(job)
+    await dis.get()  # drain to in-flight, so a re-add would show in the queue
+    assert await r.zcard(QUEUE) == 0
+
+    enqueued = await dis.enqueue_if_unseen(job)
+
+    assert not enqueued
+    assert await r.zcard(QUEUE) == 0
+
+
+async def test_enqueue_if_unseen_is_a_noop_the_second_time():
+    r = fake_redis()
+    dis = Dispatcher(r)
+    job = actor_seed()
+
+    first = await dis.enqueue_if_unseen(job)
+    second = await dis.enqueue_if_unseen(job)
+
+    assert first
+    assert not second
+    assert await r.zcard(QUEUE) == 1
+
+
+async def test_concurrent_enqueue_if_unseen_yields_exactly_one_member():
+    # THE race test: two workers discovering the same successor at once. The
+    # atomic SADD gate lets exactly one through; a check-then-act impl (seen()
+    # then enqueue()) would enqueue twice here and fail this.
+    r = fake_redis()
+    dis = Dispatcher(r)
+    job = actor_seed()
+
+    results = await asyncio.gather(
+        dis.enqueue_if_unseen(job),
+        dis.enqueue_if_unseen(job),
+    )
+
+    assert sorted(map(bool, results)) == [False, True]  # exactly one enqueued
+    assert await r.zcard(QUEUE) == 1  # exactly one queue member
+
+
+async def test_enqueue_if_unseen_raises_on_an_unidentifiable_job():
+    dis = Dispatcher(fake_redis())
+
+    with pytest.raises(Exception):
+        await dis.enqueue_if_unseen({"job_type": "actor", "depth": 1})
 
 
 # ---------------------------------------------------------------------------
