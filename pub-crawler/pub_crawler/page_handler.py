@@ -53,8 +53,7 @@ class PageHandler(Handler):
                             "owner_id": owner_id,
                             "depth": depth,
                         }
-                        if not await self.dispatcher.seen(job):
-                            await self.dispatcher.enqueue(job)
+                        await self.dispatcher.enqueue_if_unseen(job)
                 else:
                     props[f"{direction}_pages_complete"] = True
             else:

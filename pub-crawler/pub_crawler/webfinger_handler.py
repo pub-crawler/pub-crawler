@@ -20,8 +20,7 @@ class WebfingerHandler(Handler):
         )
         if not last_fetch_date:
             job = {"job_type": "actor", "actor_id": actor_id, "depth": 0}
-            if not await self.dispatcher.seen(job):
-                await self.dispatcher.enqueue(job)
+            await self.dispatcher.enqueue_if_unseen(job)
 
     def next_available(self, job):
         return self.client.next_available(job["webfinger"])
