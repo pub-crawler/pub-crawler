@@ -35,5 +35,4 @@ async def handle_items(graph, dispatcher, items, owner_id, direction, depth):
             "actor_id": id,
             "depth": depth + 1,
         }
-        if not await dispatcher.seen(job):
-            await dispatcher.enqueue(job)
+        await dispatcher.enqueue_if_unseen(job)

@@ -109,8 +109,9 @@ class FakeDispatcher:
     """Records the jobs a handler enqueues, in order — no queue, no next_available
     stamping, no routing (that's the real Dispatcher's job, tested separately).
     Tracks a `seen` set keyed by job_id, mirroring the real dispatcher, so a
-    handler's `if not seen(job): enqueue(job)` de-dup gate behaves faithfully.
-    Handler tests construct FakeDispatcher() and inspect `.enqueued`."""
+    handler's enqueue_if_unseen() gate (and the older seen()/enqueue() pattern)
+    de-dupes faithfully. Handler tests construct FakeDispatcher() and inspect
+    `.enqueued`."""
 
     def __init__(self):
         self.enqueued = []
@@ -122,6 +123,16 @@ class FakeDispatcher:
 
     async def seen(self, job):
         return job_id(job) in self._seen
+
+    async def enqueue_if_unseen(self, job):
+        # Atomic test-and-set, mirroring the real dispatcher: enqueue + mark only
+        # when the job_id is new; report whether it was enqueued.
+        jid = job_id(job)
+        if jid in self._seen:
+            return False
+        self.enqueued.append(job)
+        self._seen.add(jid)
+        return True
 
 
 # --- DatabaseGraph stand-in for handler unit tests ----------------------------

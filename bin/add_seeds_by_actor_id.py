@@ -49,8 +49,7 @@ async def add_seeds_by_actor_id(
                 if not actor_id:
                     continue
                 job = {"job_type": "actor", "actor_id": actor_id, "depth": 0}
-                if not await dispatcher.seen(job):
-                    await dispatcher.enqueue(job)
+                await dispatcher.enqueue_if_unseen(job)
 
     finally:
         await ac.aclose()
