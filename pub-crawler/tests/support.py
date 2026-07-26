@@ -139,6 +139,11 @@ class FakeGraph:
         # from edge props so all_edges/get_edge_properties stay unpolluted.
         self._edge_seq = dict()
         self._edge_counter = 0
+        # Hosts are a separate entity family with their own id sequence
+        # (host table identity), never shared with node ids.
+        self._hosts = dict()
+        self._host_ids = dict()
+        self._host_counter = 0
 
     async def ensure_node(self, label):
         if not label in self._nodes:
@@ -285,6 +290,59 @@ class FakeGraph:
             if name in props and props[name] not in seen:
                 seen.append(props[name])
                 yield props[name]
+
+    # --- hosts: the second entity family, mirroring the node methods ---------
+
+    async def ensure_host(self, hostname):
+        if not hostname in self._hosts:
+            self._hosts[hostname] = dict()
+            self._host_counter += 1
+            self._host_ids[hostname] = self._host_counter
+
+    async def ensure_hosts(self, hostnames):
+        for hostname in hostnames:
+            await self.ensure_host(hostname)
+
+    async def has_host(self, hostname):
+        return hostname in self._hosts
+
+    async def delete_host(self, hostname):
+        if hostname in self._hosts:
+            del self._hosts[hostname]
+            del self._host_ids[hostname]
+
+    async def set_host_property(self, hostname, name, value):
+        self._hosts[hostname][name] = value
+
+    async def set_hosts_property(self, hostnames, name, value):
+        for hostname in hostnames:
+            await self.set_host_property(hostname, name, value)
+
+    async def set_host_properties(self, hostname, properties):
+        for name, value in properties.items():
+            await self.set_host_property(hostname, name, value)
+
+    async def get_host_property(self, hostname, name):
+        if name in self._hosts[hostname]:
+            return self._hosts[hostname][name]
+        else:
+            return None
+
+    async def get_host_properties(self, hostname):
+        return self._hosts[hostname]
+
+    async def get_hosts_property(self, hostnames, name):
+        # keyed by hostname; absent (missing host or missing property) omitted
+        result = {}
+        for hostname in hostnames:
+            if hostname in self._hosts and name in self._hosts[hostname]:
+                result[hostname] = self._hosts[hostname][name]
+        return result
+
+    async def all_hosts(self):
+        for hostname, props in self._hosts.items():
+            id = self._host_ids[hostname]
+            yield id, hostname, props
 
     def _next_counter(self):
         self._counter += 1
