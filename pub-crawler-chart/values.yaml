@@ -207,15 +207,19 @@ fixupCrcTiebreak:
 # STOPPED (it rewrites the SEEN set in place) -- the chart can't enforce that, so
 # delete the running crawler Job before upgrading. DISABLED by default; `--set
 # fixupSeenHash.enabled=true` on the hashed-SEEN upgrade, then drop the flag.
+# CPU: unlike the other fixups (trivial member rewrites), this one hashes 42M
+# items and serializes/parses large pipelines single-threaded, so it's CPU-bound
+# -- give it ~1 full core. More won't help (Python's single-threaded, GIL), and
+# 250m throttled it to a ~5h run.
 fixupSeenHash:
   enabled: false
   resources:
     requests:
-      cpu: 50m
-      memory: 64Mi
-    limits:
-      cpu: 250m
+      cpu: 1000m
       memory: 128Mi
+    limits:
+      cpu: 1000m
+      memory: 256Mi
 
 # HTTP-status recovery: recover_http_status.py re-enqueues work lost to
 # recoverable HTTP status deaths (429/5xx recorded on the node, no failed-set
