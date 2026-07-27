@@ -52,7 +52,14 @@ async def snapshot_nodes(G, node_filename):
         "followers_members_shared",
         "following_members_shared",
     ]
-    other_props = ["hostname", "preferred_username", "name", "type", "summary", "properties"]
+    other_props = [
+        "hostname",
+        "preferred_username",
+        "name",
+        "type",
+        "summary",
+        "properties",
+    ]
     batch = collections.defaultdict(list)
     total = 0
     with pq.ParquetWriter(node_filename, node_schema) as writer:
