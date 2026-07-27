@@ -7,12 +7,17 @@ snapshot iterates a Graph (all_nodes -> (id, label, props), all_edges ->
     id, label, hostname, preferred_username, name, published, type,
     followers_count, following_count, depth,
     followers_pages_complete, following_pages_complete,
-    followers_members_shared, following_members_shared
+    followers_members_shared, following_members_shared,
+    summary, properties
   edges: one row per edge, columns `from` and `to` (integer node ids)
 
 The node columns beyond id/label are read from each node's `props` by the
 column's own (snake_case) name; a node missing that property gets null in the
 column. Only those listed columns are emitted — any other property is ignored.
+`summary` is the actor bio; `properties` is Mastodon's profile-metadata (the
+attachment/PropertyValue name/value pairs), already stored by the actor handler
+as a JSON string and emitted verbatim. Both are plain string columns, appended
+at the end of the schema.
 The edge file carries no properties, just the two endpoint ids.
 
 The signature is snapshot(G, node_filename, edge_filename) — nodes first. The
@@ -24,6 +29,7 @@ consumed). Rows are matched by id/label rather than position — snapshot makes 
 ordering promise.
 """
 
+import json
 from datetime import datetime, timezone
 
 import pyarrow.parquet as pq
@@ -50,6 +56,8 @@ NODE_COLUMNS = [
     "following_pages_complete",
     "followers_members_shared",
     "following_members_shared",
+    "summary",
+    "properties",
 ]
 EDGE_COLUMNS = ["from", "to"]
 
@@ -140,13 +148,17 @@ async def test_missing_node_properties_are_null(tmp_path):
 
 
 async def test_ignores_properties_outside_the_column_set(tmp_path):
-    # Nodes carry many properties (inbox, summary, icon, ...) that aren't snapshot
+    # Nodes carry many properties (inbox, icon, url, ...) that aren't snapshot
     # columns. Only the declared columns are emitted; extras never appear.
     g = FakeGraph()
     await g.ensure_node(EVAN)
     await g.set_node_properties(
         EVAN,
-        {"name": "Evan P", "summary": "a bio", "inbox": "https://x.example/inbox"},
+        {
+            "name": "Evan P",
+            "inbox": "https://x.example/inbox",
+            "icon": "https://x.example/a.png",
+        },
     )
     nodes_out = tmp_path / "nodes.parquet"
     edges_out = tmp_path / "edges.parquet"
@@ -154,8 +166,50 @@ async def test_ignores_properties_outside_the_column_set(tmp_path):
     await snapshot(g, str(nodes_out), str(edges_out))
 
     table = pq.read_table(str(nodes_out))
-    assert table.column_names == NODE_COLUMNS  # no `summary` / `inbox` columns
+    assert table.column_names == NODE_COLUMNS  # no `inbox` / `icon` columns
     assert _rows_by(str(nodes_out), "label")[EVAN]["name"] == "Evan P"
+
+
+async def test_summary_column_carries_the_bio(tmp_path):
+    # `summary` is the actor bio (ActivityPub summary, HTML). Rides along as a
+    # plain string column like name; a node without one gets null.
+    g = FakeGraph()
+    await g.ensure_node(EVAN)
+    await g.set_node_property(EVAN, "summary", "<p>Fediverse plumber</p>")
+    await g.ensure_node(ALICE)  # no summary
+    nodes_out = tmp_path / "nodes.parquet"
+    edges_out = tmp_path / "edges.parquet"
+
+    await snapshot(g, str(nodes_out), str(edges_out))
+
+    nodes = _rows_by(str(nodes_out), "label")
+    assert nodes[EVAN]["summary"] == "<p>Fediverse plumber</p>"
+    assert nodes[ALICE]["summary"] is None
+
+
+async def test_properties_column_carries_the_profile_fields(tmp_path):
+    # `properties` is Mastodon's profile metadata (attachment/PropertyValue
+    # name/value pairs -- pronouns, links, ...). The actor handler already stores
+    # it as a JSON string (a list of [name, value]); snapshot emits that string
+    # verbatim. A node without it gets null.
+    props_json = '[["Pronouns","she/her"],["Website","https://alice.example"]]'
+    g = FakeGraph()
+    await g.ensure_node(ALICE)
+    await g.set_node_property(ALICE, "properties", props_json)
+    await g.ensure_node(EVAN)  # no properties
+    nodes_out = tmp_path / "nodes.parquet"
+    edges_out = tmp_path / "edges.parquet"
+
+    await snapshot(g, str(nodes_out), str(edges_out))
+
+    nodes = _rows_by(str(nodes_out), "label")
+    # stored verbatim, and still valid JSON round-tripping to the original pairs
+    assert nodes[ALICE]["properties"] == props_json
+    assert json.loads(nodes[ALICE]["properties"]) == [
+        ["Pronouns", "she/her"],
+        ["Website", "https://alice.example"],
+    ]
+    assert nodes[EVAN]["properties"] is None
 
 
 async def test_unicode_name_roundtrips(tmp_path):
