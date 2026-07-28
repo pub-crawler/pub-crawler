@@ -192,6 +192,35 @@ fixupCrcTiebreak:
       cpu: 250m
       memory: 128Mi
 
+# Seen-hashing migration: fixup_seen_hash.py rewrites the SEEN de-dup set from
+# full job-id strings (key pub_crawler:seen) into fixed-width blake2b-64 hashes
+# (key pub_crawler:seen_hashed) the hashed dispatcher reads, to cut Redis memory
+# (~84 B/member -> ~36 B). Memory-safe: SSCANs the old set in batches, SADDs the
+# hashes to the new set and SREMs the strings from the old, so the old set
+# shrinks as the new grows and auto-deletes when empty. Pre-install/pre-upgrade
+# hook at weight -2, same tier as fixupZeroScore/fixupCrcTiebreak (order among
+# them doesn't matter -- they touch queue members/scores, this touches SEEN).
+# Redis-only; idempotent + resumable (re-adding a hash is a no-op, a re-run
+# continues on what's left). REQUIRED for the hashed-SEEN dispatcher deploy: the
+# new crawler reads pub_crawler:seen_hashed, so WITHOUT this migration it starts
+# on an empty oracle and re-crawls the whole graph. Run with the OLD crawler
+# STOPPED (it rewrites the SEEN set in place) -- the chart can't enforce that, so
+# delete the running crawler Job before upgrading. DISABLED by default; `--set
+# fixupSeenHash.enabled=true` on the hashed-SEEN upgrade, then drop the flag.
+# CPU: unlike the other fixups (trivial member rewrites), this one hashes 42M
+# items and serializes/parses large pipelines single-threaded, so it's CPU-bound
+# -- give it ~1 full core. More won't help (Python's single-threaded, GIL), and
+# 250m throttled it to a ~5h run.
+fixupSeenHash:
+  enabled: false
+  resources:
+    requests:
+      cpu: 1000m
+      memory: 128Mi
+    limits:
+      cpu: 1000m
+      memory: 256Mi
+
 # HTTP-status recovery: recover_http_status.py re-enqueues work lost to
 # recoverable HTTP status deaths (429/5xx recorded on the node, no failed-set
 # entry): failed actors at seed/stamped/reconstructed depth, failed collections
@@ -245,6 +274,21 @@ snapshot:
 # laptop sleep (unlike a local watch loop). Shares the snapshots PVC (RWO); a sample
 # that collides with the daily snapshot is skipped, not queued.
 crestWatch:
+  enabled: true
+  schedule: "*/30 * * * *"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+# Queue-mix: every 30 min, append the (depth, job_type) mix of the pending queue +
+# in-flight jobs to queue-mix.csv on the persistence volume, in long format
+# (timestamp,depth,job_type,count) so new depths need no header change. Same RWO
+# caveat as crest-watch: a sample that collides with the daily snapshot is skipped.
+queueMix:
   enabled: true
   schedule: "*/30 * * * *"
   resources:

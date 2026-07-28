@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-07-26
+
+### Change
+
+- summary, properties in snapshot output
+
+## [0.14.0] - 2026-07-26
+
+### Added
+
+- host, host_property table to database
+- host and host property methods to DatabaseGraph
+- NodeinfoClient class
+- fixup_seen_hash fixup script
+
+### Changed
+
+- Seen job check changed from a set of job ids to a set of job id hashes
+
 ## [0.13.0] - 2026-07-21
 
 ### Changed
@@ -316,7 +335,9 @@ keepalive connections in ActivityPubClient and WebfingerClient
 - Crawler max depth defaults to 1.
 - `DatabaseGraph` no longer uses its own transaction.
 
-[Unreleased]: https://github.com/pub-crawler/pub-crawler/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/pub-crawler/pub-crawler/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/pub-crawler/pub-crawler/compare/v0.14.0...v0.15.0
+[0.14.0]: https://github.com/pub-crawler/pub-crawler/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/pub-crawler/pub-crawler/compare/v0.12.1...v0.13.0
 [0.12.0]: https://github.com/pub-crawler/pub-crawler/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/pub-crawler/pub-crawler/compare/v0.10.1...v0.11.0

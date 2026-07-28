@@ -3,7 +3,9 @@ import asyncio
 from datetime import datetime, timezone
 from pub_crawler.job_id import job_id
 import orjson
+import hashlib
 from zlib import crc32
+
 
 def _epoch_ms():
     return time.time() * 1000
@@ -25,6 +27,7 @@ QUEUE = "pub_crawler:queue"
 INFLIGHT = "pub_crawler:inflight"
 FAILED = "pub_crawler:failed"
 SEEN = "pub_crawler:seen"
+SEEN_HASHED = "pub_crawler:seen_hashed"
 
 MAX_CLIENTS = 25
 TIME_PER_JOB = 100
@@ -47,14 +50,21 @@ class Dispatcher:
         await handler.handle(job)
 
     async def enqueue(self, job):
-        id = job_id(job)
-        if id is None:
-            raise Exception(f"Unidentifiable job {self._job_to_str(job)}")
         await self._remove_inflight(job)
         score = self._job_to_score(job)
         member = self._job_to_member(job)
         await self.redis.zadd(QUEUE, {member: score})
-        await self.redis.sadd(SEEN, id)
+        hash = self._job_to_hash(job)
+        await self.redis.sadd(SEEN_HASHED, hash)
+
+    async def enqueue_if_unseen(self, job):
+        hash = self._job_to_hash(job)
+        added = await self.redis.sadd(SEEN_HASHED, hash)
+        if added == 1:
+            score = self._job_to_score(job)
+            member = self._job_to_member(job)
+            await self.redis.zadd(QUEUE, {member: score})
+        return added == 1
 
     async def get(self):
         while not self._stopped:
@@ -108,10 +118,8 @@ class Dispatcher:
         self._stopped = True
 
     async def seen(self, job):
-        id = job_id(job)
-        if id is None:
-            raise Exception(f"Unidentifiable job {self._job_to_str(job)}")
-        return await self.redis.sismember(SEEN, id)
+        hash = self._job_to_hash(job)
+        return await self.redis.sismember(SEEN_HASHED, hash)
 
     def _get_handler(self, job):
         handler = self._handlers.get(job["job_type"], None)
@@ -166,3 +174,9 @@ class Dispatcher:
     def _member_to_job(self, member):
         _, _, _, _, job = member.decode().split("|", 4)
         return self._str_to_job(job)
+
+    def _job_to_hash(self, job):
+        jid = job_id(job)
+        if jid is None:
+            raise Exception(f"No jid for job {job}")
+        return hashlib.blake2b(jid.encode(), digest_size=8).digest()

@@ -77,8 +77,7 @@ class ActorHandler(Handler):
                     "direction": "followers",
                     "depth": depth,
                 }
-                if not await self.dispatcher.seen(job):
-                    await self.dispatcher.enqueue(job)
+                await self.dispatcher.enqueue_if_unseen(job)
             if "following" in doc and isinstance(doc["following"], str):
                 props["following"] = doc["following"]
                 job = {
@@ -88,8 +87,7 @@ class ActorHandler(Handler):
                     "direction": "following",
                     "depth": depth,
                 }
-                if not await self.dispatcher.seen(job):
-                    await self.dispatcher.enqueue(job)
+                await self.dispatcher.enqueue_if_unseen(job)
 
         await self.graph.set_node_properties(actor_id, props)
 

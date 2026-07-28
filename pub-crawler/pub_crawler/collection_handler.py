@@ -51,8 +51,7 @@ class CollectionHandler(Handler):
                             "direction": direction,
                             "depth": depth,
                         }
-                        if not await self.dispatcher.seen(job):
-                            await self.dispatcher.enqueue(job)
+                        await self.dispatcher.enqueue_if_unseen(job)
                 else:
                     items = json.get("items", json.get("orderedItems", None))
                     if items:

@@ -1,0 +1,90 @@
+{{- if .Values.queueMix.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "pub-crawler.fullname" . }}-queue-mix
+  labels:
+    {{- include "pub-crawler.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.queueMix.schedule | quote }}
+  # One sampler at a time; if a run is still waiting on the RWO volume (e.g. the
+  # daily snapshot holds it), skip rather than queue.
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      # Longer than crest-watch: this scans the full queue + inflight set, not one
+      # O(1) sample. Still bounded so a stuck pod can't block the next tick (Forbid).
+      activeDeadlineSeconds: 300
+      ttlSecondsAfterFinished: 600
+      template:
+        metadata:
+          labels:
+            {{- include "pub-crawler.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: queue-mix
+        spec:
+          restartPolicy: Never
+          {{- with .Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          securityContext:
+            {{- toYaml .Values.podSecurityContext | nindent 12 }}
+          containers:
+            - name: queue-mix
+              image: {{ include "pub-crawler.image" . }}
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              # Append one long-format sample of the pending + in-flight job mix to
+              # queue-mix.csv on the persistence volume: one row per (depth, job_type)
+              # combo present, `timestamp,depth,job_type,count`. Header is written only
+              # when the file is new. Queue members are `depth|type|crc|ts|job`; the
+              # job JSON is everything after the 4th `|`. Streamed via zscan_iter /
+              # hscan_iter (flat memory) — safe even on a multi-million queue. Errors
+              # go to stderr (pod log), never into the CSV.
+              command:
+                - python
+                - -c
+                - |
+                  import os, csv, json, datetime, collections, redis
+                  r = redis.from_url(os.environ["REDIS_URL"])
+                  ctr = collections.Counter()
+                  def tally(job):
+                      ctr[(job.get("depth", 0), job.get("job_type") or "?")] += 1
+                  for member, score in r.zscan_iter("pub_crawler:queue", count=5000):
+                      tally(json.loads(member.decode().split("|", 4)[4]))
+                  for field, expiry in r.hscan_iter("pub_crawler:inflight"):
+                      s = field.decode()
+                      if not s.startswith("{"):
+                          s = s.split(":", 1)[1]
+                      tally(json.loads(s))
+                  ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M")
+                  path = "{{ .Values.persistence.mountPath }}/queue-mix.csv"
+                  new = not os.path.exists(path) or os.path.getsize(path) == 0
+                  with open(path, "a", newline="") as f:
+                      w = csv.writer(f)
+                      if new:
+                          w.writerow(["timestamp", "depth", "job_type", "count"])
+                      for d, jt in sorted(ctr):
+                          w.writerow([ts, d, jt, ctr[(d, jt)]])
+              securityContext:
+                {{- toYaml .Values.securityContext | nindent 16 }}
+              env:
+                {{- include "pub-crawler.redisEnv" . | nindent 16 }}
+              volumeMounts:
+                - name: data
+                  mountPath: {{ .Values.persistence.mountPath }}
+              {{- with .Values.queueMix.resources }}
+              resources:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+          volumes:
+            - name: data
+              {{- if .Values.persistence.enabled }}
+              persistentVolumeClaim:
+                claimName: {{ include "pub-crawler.fullname" . }}-snapshots
+              {{- else }}
+              emptyDir: {}
+              {{- end }}
+{{- end }}
