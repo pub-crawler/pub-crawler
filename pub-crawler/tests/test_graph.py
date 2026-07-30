@@ -106,6 +106,35 @@ async def test_ensure_node_is_idempotent(graph):
     assert await graph.has_node(A)
 
 
+async def test_re_ensuring_a_node_does_not_burn_ids(graph):
+    # Same contract as the host family: re-ensuring an existing node must not
+    # consume identity values (filter existing rows before the default is
+    # evaluated, rather than relying on ON CONFLICT alone), so ids stay
+    # (mostly) consecutive. Concurrent-race gaps are tolerated; systematic
+    # re-ensure burn is not. NB: the production node sequence keeps its
+    # historical high-water mark — this pins the behavior going forward.
+    await graph.ensure_node(A)
+    await graph.ensure_node(A)  # re-ensure, single
+    await graph.ensure_nodes([A])  # re-ensure, bulk
+    await graph.ensure_node(B)
+
+    ids = {label: node_id async for node_id, label, _ in graph.all_nodes()}
+
+    assert ids[B] == ids[A] + 1
+
+
+async def test_ensure_nodes_mixed_batch_does_not_burn_ids(graph):
+    # The crawler's real call shape: a bulk ensure where most members already
+    # exist (page after page of mostly-seen actors). Only the genuinely new
+    # members may consume ids — the existing ones must not, even mid-batch.
+    await graph.ensure_node(A)
+    await graph.ensure_nodes([A, B, C])  # A exists; B and C are new
+
+    ids = {label: node_id async for node_id, label, _ in graph.all_nodes()}
+
+    assert sorted((ids[B], ids[C])) == [ids[A] + 1, ids[A] + 2]
+
+
 async def test_delete_node(graph):
     await graph.ensure_node(A)
     await graph.delete_node(A)
