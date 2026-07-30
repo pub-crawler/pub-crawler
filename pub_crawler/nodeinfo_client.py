@@ -151,16 +151,19 @@ class NodeinfoClient:
 
     @staticmethod
     def parse_nodeinfo(doc):
-        props = {
-            "nodeinfo_version": None,
-            "software_name": None,
-            "software_version": None,
-            "users_total": None,
-            "users_active_month": None,
-            "users_active_halfyear": None,
-            "local_posts": None,
-            "local_comments": None,
-        }
+        names = [
+            "nodeinfo_version",
+            "software_name",
+            "software_version",
+            "users_total",
+            "users_active_month",
+            "users_active_halfyear",
+            "local_posts",
+            "local_comments",
+        ]
+        props = dict()
+        for name in names:
+            props[name] = None
         if doc is not None and isinstance(doc, dict):
             props["nodeinfo_version"] = safe_str(doc.get("version"))
             software = doc.get("software")
