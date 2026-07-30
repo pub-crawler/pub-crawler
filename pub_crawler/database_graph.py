@@ -23,7 +23,9 @@ class DatabaseGraph:
         async with self._pool.acquire() as conn:
             await conn.execute(
                 """
-                INSERT INTO node (label) VALUES ($1)
+                INSERT INTO node (label)
+                SELECT $1::varchar
+                WHERE NOT EXISTS (SELECT 1 FROM node n WHERE n.label = $1::varchar)
                 ON CONFLICT (label) DO NOTHING
                 """,
                 label,
@@ -37,8 +39,9 @@ class DatabaseGraph:
             await conn.execute(
                 """
                 INSERT INTO node (label)
-                SELECT unnest($1::text[])
-                ON CONFLICT (label) DO NOTHING
+                SELECT arg_label FROM unnest($1::text[]) AS arg_label
+                WHERE NOT EXISTS (SELECT 1 FROM node n WHERE n.label = arg_label)
+                ON CONFLICT (label) DO NOTHING;
                 """,
                 to_upsert,
             )

@@ -123,6 +123,17 @@ async def test_re_ensuring_does_not_burn_ids(graph):
     assert ids[H2] == ids[H1] + 1
 
 
+async def test_ensure_hosts_mixed_batch_does_not_burn_ids(graph):
+    # Bulk ensure where one member already exists: only the genuinely new
+    # hostnames may consume ids (mirrors the node-family contract).
+    await graph.ensure_host(H1)
+    await graph.ensure_hosts([H1, H2, H3])  # H1 exists; H2 and H3 are new
+
+    ids = {h: host_id async for host_id, h, _ in graph.all_hosts()}
+
+    assert sorted((ids[H2], ids[H3])) == [ids[H1] + 1, ids[H1] + 2]
+
+
 # ---------------------------------------------------------------------------
 # has / delete
 # ---------------------------------------------------------------------------
