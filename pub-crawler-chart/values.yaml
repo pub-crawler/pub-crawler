@@ -276,8 +276,8 @@ snapshot:
 # `--limit 200` smoke run has validated egress from the cluster.
 survey:
   enabled: false
-  schedule: "0 0 * * *"   # nightly, clear of the 03:00 graph snapshot
-  maxAge: "1d"
+  schedule: "0 0 * * 0"   # weekly, Sunday 00:00 UTC
+  maxAge: "1d"            # anything older than a day is due, so a weekly run re-probes all
   maxWorkers: 50
   resources:
     requests:
@@ -288,12 +288,12 @@ survey:
       memory: 512Mi
 
 # Host snapshot: host_snapshot.py exports the host survey to a dated Parquet
-# file on the snapshots PVC. Scheduled after the nightly survey finishes
-# (survey is 1-3h) and clear of the 03:00 graph snapshot; same RWO-PVC
-# collision caveat as crest-watch.
+# file on the snapshots PVC. Scheduled 12h after the weekly survey starts
+# (a full survey runs ~10h) and clear of the daily 03:00 graph snapshot;
+# same RWO-PVC collision caveat as crest-watch.
 hostSnapshot:
   enabled: false
-  schedule: "0 5 * * *"
+  schedule: "0 12 * * 0"  # weekly, Sunday 12:00 UTC
   resources:
     requests:
       cpu: 50m
