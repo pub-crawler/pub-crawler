@@ -31,4 +31,17 @@ erDiagram
         timestamptz created_at
         timestamptz updated_at
     }
+    HOST ||--o{ HOST_PROPERTY : "has"
+    HOST {
+        int id PK
+        varchar(256) hostname UK
+        timestamptz created_at
+    }
+    HOST_PROPERTY {
+        int id PK,FK
+        varchar(32) name PK
+        jsonb value
+        timestamptz created_at
+        timestamptz updated_at
+    }
 ```
