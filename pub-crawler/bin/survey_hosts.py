@@ -1,8 +1,7 @@
 import logging
-import httpx
 
 from pub_crawler.host_surveyor import HostSurveyor
-from pub_crawler.nodeinfo_client import NodeinfoClient, DEFAULT_KEEPALIVE_EXPIRY
+from pub_crawler.nodeinfo_client import NodeinfoClient
 from pub_crawler.database import database_setup
 from pub_crawler.database_graph import DatabaseGraph
 from pub_crawler.database_host_survey import DatabaseHostSurvey
@@ -107,15 +106,7 @@ async def main(database_url, max_age, max_workers, limit, seed):
     H = DatabaseHostSurvey(pool)
     burst = FixedWindowCounter(BURST_LIMIT, BURST_WINDOW)
     general = FixedWindowCounter(GENERAL_LIMIT, GENERAL_WINDOW)
-    limits = httpx.Limits(
-        max_connections=max_workers,
-        max_keepalive_connections=max_workers,
-        keepalive_expiry=DEFAULT_KEEPALIVE_EXPIRY,
-    )
-    transport = httpx.AsyncHTTPTransport(http2=True, retries=0, limits=limits)
-    client = NodeinfoClient(
-        general, burst, transport=transport, max_workers=max_workers
-    )
+    client = NodeinfoClient(general, burst, transport=None, max_workers=max_workers)
     surveyor = HostSurveyor(client)
     try:
         if seed:

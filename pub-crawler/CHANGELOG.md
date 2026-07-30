@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.1] - 2026-07-30
+
+### Fixed
+
+- Let NodeinfoClient use its default transport, including retries default
+
 ## [0.16.0] - 2026-07-30
 
 ### Added
@@ -352,7 +358,8 @@ keepalive connections in ActivityPubClient and WebfingerClient
 - Crawler max depth defaults to 1.
 - `DatabaseGraph` no longer uses its own transaction.
 
-[Unreleased]: https://github.com/pub-crawler/pub-crawler/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/pub-crawler/pub-crawler/compare/v0.16.1...HEAD
+[0.16.1]: https://github.com/pub-crawler/pub-crawler/compare/v0.16.0...v0.16.1
 [0.16.0]: https://github.com/pub-crawler/pub-crawler/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/pub-crawler/pub-crawler/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/pub-crawler/pub-crawler/compare/v0.13.0...v0.14.0
