@@ -11,6 +11,7 @@ FakeHostSurvey (tests/support.py). The API:
   await set_host_property(hostname, name, value)
   await set_hosts_property(hostnames, name, value)     # same value on many
   await set_host_properties(hostname, properties)      # many values on one
+  await delete_host_properties(hostname, names)        # drop named props
   await get_host_property(hostname, name)  -> value (None if absent)
   await get_hosts_property(hostnames, name) -> {hostname: value}, absent omitted
   await get_host_properties(hostname)      -> {name: value}
@@ -248,6 +249,32 @@ async def test_get_hosts_property_keyed_by_hostname_omits_absent(survey):
 
 async def test_get_hosts_property_empty_input_is_empty_dict(survey):
     assert await survey.get_hosts_property([], "anything") == {}
+
+
+async def test_delete_host_properties_removes_only_the_named(survey):
+    # The survey's stale-property eraser: a re-survey deletes the properties
+    # its new result has no value for (e.g. failure after a host recovers,
+    # software_name after a host dies), leaving the rest untouched.
+    await survey.ensure_host(H1)
+    await survey.set_host_properties(
+        H1, {"failure": "connect_error", "error_detail": "x", "users_total": 5}
+    )
+
+    await survey.delete_host_properties(H1, ["failure", "error_detail"])
+
+    assert await survey.get_host_properties(H1) == {"users_total": 5}
+
+
+async def test_delete_host_properties_tolerates_absent_names(survey):
+    # Deleting names the host doesn't carry (the common case: most surveys
+    # have nothing stale to erase) is a no-op, not an error; empty too.
+    await survey.ensure_host(H1)
+    await survey.set_host_property(H1, "users_total", 5)
+
+    await survey.delete_host_properties(H1, ["failure", "software_name"])
+    await survey.delete_host_properties(H1, [])
+
+    assert await survey.get_host_properties(H1) == {"users_total": 5}
 
 
 # ---------------------------------------------------------------------------

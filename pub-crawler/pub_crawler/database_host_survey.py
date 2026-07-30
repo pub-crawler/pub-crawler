@@ -177,6 +177,19 @@ class DatabaseHostSurvey:
                 async for row in conn.cursor(sql):
                     yield row["id"], row["hostname"], orjson.loads(row["props"])
 
+    async def delete_host_properties(self, hostname: str, names: list[str]) -> None:
+        async with self._pool.acquire() as conn:
+            id = await self._host_id(conn, hostname)
+            await conn.execute(
+                """
+                DELETE FROM host_property
+                WHERE id=$1
+                AND name = ANY($2::text[])
+                """,
+                id,
+                names,
+            )
+
     async def _host_id(self, conn, hostname: str) -> int | None:
         if hostname in self._host_cache:
             return self._host_cache[hostname]

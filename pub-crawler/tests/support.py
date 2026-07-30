@@ -344,6 +344,10 @@ class FakeHostSurvey:
         for name, value in properties.items():
             await self.set_host_property(hostname, name, value)
 
+    async def delete_host_properties(self, hostname, names):
+        for name in names:
+            self._hosts[hostname].pop(name, None)
+
     async def get_host_property(self, hostname, name):
         if name in self._hosts[hostname]:
             return self._hosts[hostname][name]

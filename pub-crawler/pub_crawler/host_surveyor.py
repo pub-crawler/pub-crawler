@@ -40,15 +40,29 @@ class HostSurveyor:
         self.client = client
 
     async def survey(self, hostname: str) -> dict[str, Any]:
-        props = {"last_fetch_date": datetime.now(timezone.utc).isoformat()}
+        props = {
+            "last_fetch_date": datetime.now(timezone.utc).isoformat(),
+            "failure": None,
+            "error_detail": None,
+        }
+        names = [
+            "nodeinfo_version",
+            "software_name",
+            "software_version",
+            "users_total",
+            "users_active_month",
+            "users_active_halfyear",
+            "local_posts",
+            "local_comments",
+        ]
+        for name in names:
+            props[name] = None
         try:
             fetched = await self.client.get_nodeinfo(hostname)
             if fetched is None:
                 props["failure"] = "nodeinfo_invalid"
-                props["error_detail"] = "No data returned from get_nodeinfo()"
             else:
-                filtered = {k: v for k, v in fetched.items() if v is not None}
-                props = {**filtered, **props}
+                props = {**props, **fetched}
         except Exception as exc:
             props["failure"] = classify_exception(exc)
             props["error_detail"] = repr(exc)[:500]
