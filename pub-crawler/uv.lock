@@ -419,6 +419,7 @@ dependencies = [
     { name = "networkx" },
     { name = "orjson" },
     { name = "pyarrow" },
+    { name = "pytimeparse2" },
     { name = "redis" },
     { name = "uvloop" },
 ]
@@ -441,6 +442,7 @@ requires-dist = [
     { name = "networkx", specifier = ">=3.6.1" },
     { name = "orjson", specifier = ">=3.11.9" },
     { name = "pyarrow", specifier = ">=24.0.0" },
+    { name = "pytimeparse2", specifier = ">=1.7.1" },
     { name = "redis", specifier = ">=8.0.0" },
     { name = "uvloop", specifier = ">=0.22.1" },
 ]
@@ -533,6 +535,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/43/7c/d36d04db312ecf4298932ef77e6e4a9e8ad017906e24e34f0b0c361a2473/pytest_asyncio-1.4.0.tar.gz", hash = "sha256:c6c0d2259945122819f171a32ecea2c349ead889ee28176caaf492143424be42", size = 58514, upload-time = "2026-05-26T09:56:04.083Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/03/e2/08a497ef684b88559c9cc5f4ad53a37e7b99e727094a86d6ea32536d5d3c/pytest_asyncio-1.4.0-py3-none-any.whl", hash = "sha256:933ca923a23075a87fb7070c0ec272a6848489824d887c85c812670932835aa1", size = 16930, upload-time = "2026-05-26T09:56:02.576Z" },
+]
+
+[[package]]
+name = "pytimeparse2"
+version = "1.7.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/19/10/cc63fecd69905eb4d300fe71bd580e4a631483e9f53fdcb8c0ad345ce832/pytimeparse2-1.7.1.tar.gz", hash = "sha256:98668cdcba4890e1789e432e8ea0059ccf72402f13f5d52be15bdfaeb3a8b253", size = 10431, upload-time = "2023-05-11T21:40:55.774Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/17/9e/85abf91ef5df452f56498927affdb7128194d15644084f6c6722477c305b/pytimeparse2-1.7.1-py3-none-any.whl", hash = "sha256:a162ea6a7707fd0bb82dd99556efb783935f51885c8bdced0fce3fffe85ab002", size = 6136, upload-time = "2023-05-11T21:40:46.051Z" },
 ]
 
 [[package]]
