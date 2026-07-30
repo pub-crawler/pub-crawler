@@ -60,7 +60,10 @@ async def survey_one(hostname, H, surveyor, sem):
     async with sem:
         try:
             props = await surveyor.survey(hostname)
-            await H.set_host_properties(hostname, props)
+            delete_props = [k for k, v in props.items() if v is None]
+            set_props = {k: v for k, v in props.items() if v is not None}
+            await H.delete_host_properties(hostname, delete_props)
+            await H.set_host_properties(hostname, set_props)
         except Exception as e:
             logging.warning(f"{hostname}: {e!r}")
             return None

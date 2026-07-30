@@ -14,23 +14,32 @@
 
   HostSurveyor(nodeinfo_client)
     .survey(hostname) -> dict; never raises for per-host problems.
-    The dict is exactly what set_host_properties takes: persistable values
-    keyed by property name, None-valued fields omitted, hostname NOT
-    included (the caller knows which host it asked about).
+    The dict has a FIXED shape: all eleven survey keys, always present,
+    None where this survey produced no value (hostname NOT included — the
+    caller knows which host it asked about). The keys:
+      last_fetch_date, failure, error_detail, nodeinfo_version,
+      software_name, software_version, users_total, users_active_month,
+      users_active_halfyear, local_posts, local_comments
+    The caller (survey_one) deletes the None-valued names from the store
+    and writes the rest — so stale properties from an earlier survey (a
+    failure that recovered, software fields of a host that died) are erased
+    by the next survey. The surveyor itself never touches the store.
     Calls nodeinfo_client.get_nodeinfo(hostname), which returns the parsed
     eight-field dict (the client runs parse_nodeinfo itself), returns None
     for an application-level failure (no usable link / unparseable body),
     or raises.
-      On a dict:      the non-None nodeinfo fields merged in; NO failure or
-                      error_detail keys — absence of "failure" IS success.
-      On None:        failure "nodeinfo_invalid".
+      On a dict:      the eight nodeinfo fields carried over (Nones and
+                      all); failure and error_detail are None — absence of
+                      a stored failure IS success.
+      On None:        failure "nodeinfo_invalid"; error_detail None.
       On exception:   failure = classify_exception(exc), error_detail =
-                      repr(exc) truncated to <= 500 chars.
+                      repr(exc) truncated to <= 500 chars; nodeinfo fields
+                      all None.
     There is no separate stage property: the failure taxonomy already
     locates where the probe stopped (dns_error / connect_error / tls_error
     are transport-dead; nodeinfo_* and http_error mean the host is alive).
-    Every result carries last_fetch_date: an ISO-8601 UTC timestamp string,
-    set at survey time, on failures too (failed hosts wait out --max-age).
+    last_fetch_date is never None: an ISO-8601 UTC timestamp string, set at
+    survey time, on failures too (failed hosts wait out --max-age).
 
 Assumed contract (adjust the tests if the shape differs).
 """
@@ -43,6 +52,20 @@ import httpx
 import pytest
 
 from pub_crawler.host_surveyor import HostSurveyor, classify_exception
+
+SURVEY_KEYS = {
+    "last_fetch_date",
+    "failure",
+    "error_detail",
+    "nodeinfo_version",
+    "software_name",
+    "software_version",
+    "users_total",
+    "users_active_month",
+    "users_active_halfyear",
+    "local_posts",
+    "local_comments",
+}
 
 # What get_nodeinfo hands back for a healthy Mastodon box: parse_nodeinfo's
 # normalized eight-field shape, not a raw document.
@@ -164,21 +187,20 @@ def test_anything_else_is_error():
 # ---------------------------------------------------------------------------
 
 
-async def test_success_has_the_nodeinfo_fields_and_no_failure():
+async def test_success_has_the_nodeinfo_fields_and_none_failure():
     result = await survey(FakeNodeinfoClient(result=NODEINFO_FIELDS))
 
+    assert set(result.keys()) == SURVEY_KEYS  # fixed shape, hostname excluded
     assert result["nodeinfo_version"] == "2.0"
     assert result["software_name"] == "mastodon"
     assert result["software_version"] == "4.3.2"
     assert result["users_total"] == 890000
     assert result["users_active_month"] == 230000
     assert result["local_posts"] == 120000000
-    # None-valued and inapplicable fields are omitted, not stored
-    assert "failure" not in result
-    assert "error_detail" not in result
-    assert "local_comments" not in result  # Mastodon reports no comments
-    assert "hostname" not in result  # the caller knows which host it asked
-    assert None not in result.values()
+    # Unknowns are explicit Nones — the caller deletes these from the store
+    assert result["failure"] is None
+    assert result["error_detail"] is None
+    assert result["local_comments"] is None  # Mastodon reports no comments
 
 
 @pytest.mark.parametrize(
@@ -200,9 +222,11 @@ async def test_success_has_the_nodeinfo_fields_and_no_failure():
 async def test_failures_classify_into_failure(error, failure):
     result = await survey(FakeNodeinfoClient(error=error))
 
+    assert set(result.keys()) == SURVEY_KEYS  # fixed shape on failure too
     assert result["failure"] == failure
     assert result["error_detail"]  # non-empty
-    assert "software_name" not in result  # nothing parsed
+    assert result["software_name"] is None  # nothing parsed
+    assert result["users_total"] is None
 
 
 async def test_none_from_the_client_is_nodeinfo_invalid():
@@ -211,7 +235,8 @@ async def test_none_from_the_client_is_nodeinfo_invalid():
     result = await survey(FakeNodeinfoClient(result=None))
 
     assert result["failure"] == "nodeinfo_invalid"
-    assert "software_name" not in result
+    assert result["error_detail"] is None  # no exception to describe
+    assert result["software_name"] is None
 
 
 async def test_http_error_detail_carries_the_status():

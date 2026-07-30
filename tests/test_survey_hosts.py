@@ -16,12 +16,15 @@ the survey container holds hosts and their properties.
     Scan: a host is due when its last_fetch_date property is absent, or is
     an ISO-8601 timestamp older than now - max_age (a timedelta; the CLI
     converts --max-age). Survey: at most max_workers
-    surveyor.survey(hostname) calls in flight; each returned dict is saved
-    with survey.set_host_properties(hostname, result) as it completes —
-    per-host saves are the resume granularity. When limit is not None, at
-    most that many hosts are surveyed (smoke runs). One host's failure
-    (surveying or saving) must not abort the rest. Returns the number of
-    hosts surveyed.
+    surveyor.survey(hostname) calls in flight. The surveyor returns a
+    FIXED-shape dict (every survey key present, None where unknown); each
+    completion is saved by splitting it: the None-valued names are
+    survey.delete_host_properties()'d (erasing stale values from earlier
+    surveys — a failure that recovered, software fields of a host that
+    died) and the rest are survey.set_host_properties()'d. Per-host saves
+    are the resume granularity. When limit is not None, at most that many
+    hosts are surveyed (smoke runs). One host's failure (surveying or
+    saving) must not abort the rest. Returns the number of hosts surveyed.
 
 Uses FakeGraph + FakeHostSurvey and a fake surveyor; the real
 HostSurveyor/NodeinfoClient and argparse plumbing are not exercised here.
@@ -154,6 +157,55 @@ async def test_saves_the_survey_result_as_host_properties():
     props = await survey.get_host_properties("a.example")
     assert props["failure"] == "dns_error"
     assert props["last_fetch_date"] == NOW.isoformat()
+
+
+async def test_none_values_are_deleted_not_stored():
+    # The stale-property eraser, both directions. A host that failed before
+    # and now surveys clean loses its failure/error_detail; a host that was
+    # clean and now fails loses its software fields. The surveyor's Nones
+    # mark exactly what to erase.
+    survey = await survey_with_hosts(
+        **{"recovered.example": None, "died.example": None}
+    )
+    await survey.set_host_properties(
+        "recovered.example",
+        {"failure": "connect_error", "error_detail": "ConnectTimeout('')"},
+    )
+    await survey.set_host_properties(
+        "died.example", {"software_name": "mastodon", "users_total": 42}
+    )
+
+    class TwoFacedSurveyor:
+        async def survey(self, hostname):
+            if hostname == "recovered.example":
+                return {
+                    "last_fetch_date": NOW.isoformat(),
+                    "failure": None,
+                    "error_detail": None,
+                    "software_name": "mastodon",
+                    "users_total": 7,
+                }
+            return {
+                "last_fetch_date": NOW.isoformat(),
+                "failure": "dns_error",
+                "error_detail": "gaierror(8)",
+                "software_name": None,
+                "users_total": None,
+            }
+
+    await survey_hosts(survey, TwoFacedSurveyor(), max_age=WEEK)
+
+    recovered = await survey.get_host_properties("recovered.example")
+    assert "failure" not in recovered  # stale failure erased
+    assert "error_detail" not in recovered
+    assert recovered["software_name"] == "mastodon"
+    assert recovered["users_total"] == 7
+
+    died = await survey.get_host_properties("died.example")
+    assert died["failure"] == "dns_error"  # fresh failure stored
+    assert "software_name" not in died  # stale software erased
+    assert "users_total" not in died
+    assert None not in died.values()  # Nones deleted, never written
 
 
 # ---------------------------------------------------------------------------
