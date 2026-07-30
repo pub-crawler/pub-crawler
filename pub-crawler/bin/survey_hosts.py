@@ -5,6 +5,7 @@ from pub_crawler.host_surveyor import HostSurveyor
 from pub_crawler.nodeinfo_client import NodeinfoClient, DEFAULT_KEEPALIVE_EXPIRY
 from pub_crawler.database import database_setup
 from pub_crawler.database_graph import DatabaseGraph
+from pub_crawler.database_host_survey import DatabaseHostSurvey
 from pub_crawler.fixed_window_counter import FixedWindowCounter
 from pub_crawler.throttle import (
     BURST_LIMIT,
@@ -26,7 +27,7 @@ SEED_HOSTS_REPORT_LIMIT = 100_000
 SEED_HOSTS_BATCH_LIMIT = 1000
 
 
-async def seed_hosts_from_nodes(G):
+async def seed_hosts_from_nodes(G, H):
     node_count = 0
 
     hostnames = set()
@@ -46,32 +47,32 @@ async def seed_hosts_from_nodes(G):
         host_count += 1
         batch.append(hostname)
         if len(batch) >= SEED_HOSTS_BATCH_LIMIT:
-            await G.ensure_hosts(batch)
+            await H.ensure_hosts(batch)
             batch = []
             logging.info(f"{host_count} hosts ensured")
 
     if len(batch) > 0:
-        await G.ensure_hosts(batch)
+        await H.ensure_hosts(batch)
         batch = []
         logging.info(f"{host_count} hosts ensured")
 
 
-async def survey_one(hostname, G, surveyor, sem):
+async def survey_one(hostname, H, surveyor, sem):
     async with sem:
         try:
             props = await surveyor.survey(hostname)
-            await G.set_host_properties(hostname, props)
+            await H.set_host_properties(hostname, props)
         except Exception as e:
             logging.warning(f"{hostname}: {e!r}")
             return None
 
 
 async def survey_hosts(
-    G, surveyor, *, max_age, max_workers=DEFAULT_MAX_WORKERS, limit=DEFAULT_LIMIT
+    H, surveyor, *, max_age, max_workers=DEFAULT_MAX_WORKERS, limit=DEFAULT_LIMIT
 ):
     cutoff = datetime.now(timezone.utc) - max_age
     to_survey = []
-    async for _, hostname, props in G.all_hosts():
+    async for _, hostname, props in H.all_hosts():
         if "last_fetch_date" not in props:
             to_survey.append(hostname)
         else:
@@ -89,7 +90,7 @@ async def survey_hosts(
     sem = asyncio.Semaphore(max_workers)
 
     await asyncio.gather(
-        *(survey_one(hostname, G, surveyor, sem) for hostname in to_survey)
+        *(survey_one(hostname, H, surveyor, sem) for hostname in to_survey)
     )
 
     return len(to_survey)
@@ -103,6 +104,7 @@ async def main(database_url, max_age, max_workers, limit, seed):
     async with pool.acquire() as conn:
         await database_setup(conn)
     G = DatabaseGraph(pool)
+    H = DatabaseHostSurvey(pool)
     burst = FixedWindowCounter(BURST_LIMIT, BURST_WINDOW)
     general = FixedWindowCounter(GENERAL_LIMIT, GENERAL_WINDOW)
     limits = httpx.Limits(
@@ -117,9 +119,9 @@ async def main(database_url, max_age, max_workers, limit, seed):
     surveyor = HostSurveyor(client)
     try:
         if seed:
-            await seed_hosts_from_nodes(G)
+            await seed_hosts_from_nodes(G, H)
         return await survey_hosts(
-            G,
+            H,
             surveyor,
             max_age=timedelta(seconds=max_age),
             max_workers=max_workers,

@@ -1,5 +1,5 @@
 import logging
-from pub_crawler.database_graph import DatabaseGraph
+from pub_crawler.database_host_survey import DatabaseHostSurvey
 import asyncio
 import asyncpg
 import uvloop
@@ -33,7 +33,7 @@ MAX_INT64 = 2**63 - 1
 DEFAULT_HOST_FILENAME = "activitypub-hosts.parquet"
 
 
-async def snapshot_hosts(G, host_filename):
+async def snapshot_hosts(H, host_filename):
     int_props = [
         "users_total",
         "users_active_month",
@@ -51,7 +51,7 @@ async def snapshot_hosts(G, host_filename):
     batch = collections.defaultdict(list)
     total = 0
     with pq.ParquetWriter(host_filename, host_schema) as writer:
-        async for id, hostname, props in G.all_hosts():
+        async for id, hostname, props in H.all_hosts():
             batch["id"].append(id)
             batch["hostname"].append(hostname)
             last_fetch_date = None
@@ -101,7 +101,7 @@ async def main(database_url, host_filename):
     pool = await asyncpg.create_pool(database_url)
     total = 0
     try:
-        total = await snapshot_hosts(DatabaseGraph(pool), host_filename)
+        total = await snapshot_hosts(DatabaseHostSurvey(pool), host_filename)
     finally:
         await pool.close()
     return total
