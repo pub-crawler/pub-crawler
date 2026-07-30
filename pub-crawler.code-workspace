@@ -1,0 +1,17 @@
+{
+  "folders": [
+    {
+      "path": ".",
+      "name": "monorepo root"
+    },
+    {
+      "path": "pub-crawler"
+    },
+    {
+      "path": "pub-crawler-data-analysis"
+    },
+    {
+      "path": "pub-crawler-chart"
+    }
+  ]
+}
