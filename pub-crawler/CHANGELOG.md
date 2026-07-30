@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - host_survey module to get properties for a host (including error data)
 - survey_hosts.py script to survey hosts from node data
 - host_snapshot.py to get a Parquet file snapshot of hosts data
+- docs/host_survey.md for host survey subsystem architecture
 
 ### Fixed
 
