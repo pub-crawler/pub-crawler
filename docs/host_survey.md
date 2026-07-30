@@ -332,9 +332,9 @@ Operational notes:
   vs. 6.2M nodes / 100M+ edges), so the `kubectl cp` truncation caveat that
   applies to the edges file is unlikely to bite — but verify checksums all
   the same, per the snapshot download procedure.
-- The chart ships two CronJobs, both off by default: a nightly survey
-  (00:00, DB + egress only) and a host-snapshot export to the snapshots PVC
-  (05:00, after the survey window and clear of the 03:00 graph snapshot).
-  Enable them after a manual `--limit 200` smoke run validates egress;
-  `last_fetch_date` staleness makes overlapping manual and scheduled runs
-  harmless.
+- The chart ships two CronJobs, both off by default: a weekly survey
+  (Sunday 00:00 UTC, DB + egress only) and a host-snapshot export to the
+  snapshots PVC 12 hours later (Sunday 12:00 UTC — past the ~10h survey
+  window and clear of the daily 03:00 graph snapshot). Enable them after a
+  manual `--limit 200` smoke run validates egress; `last_fetch_date`
+  staleness makes overlapping manual and scheduled runs harmless.
