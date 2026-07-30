@@ -150,11 +150,6 @@ class FakeGraph:
         # from edge props so all_edges/get_edge_properties stay unpolluted.
         self._edge_seq = dict()
         self._edge_counter = 0
-        # Hosts are a separate entity family with their own id sequence
-        # (host table identity), never shared with node ids.
-        self._hosts = dict()
-        self._host_ids = dict()
-        self._host_counter = 0
 
     async def ensure_node(self, label):
         if not label in self._nodes:
@@ -302,7 +297,23 @@ class FakeGraph:
                 seen.append(props[name])
                 yield props[name]
 
-    # --- hosts: the second entity family, mirroring the node methods ---------
+    def _next_counter(self):
+        self._counter += 1
+        return self._counter
+
+
+# --- HostSurvey stand-in ------------------------------------------------------
+
+
+class FakeHostSurvey:
+    """In-memory stand-in for DatabaseHostSurvey — the host half that used to
+    live on FakeGraph, now its own container (hosts aren't a graph). Same
+    method names, same semantics, own id sequence (host table identity)."""
+
+    def __init__(self):
+        self._hosts = dict()
+        self._host_ids = dict()
+        self._host_counter = 0
 
     async def ensure_host(self, hostname):
         if not hostname in self._hosts:
@@ -354,7 +365,3 @@ class FakeGraph:
         for hostname, props in self._hosts.items():
             id = self._host_ids[hostname]
             yield id, hostname, props
-
-    def _next_counter(self):
-        self._counter += 1
-        return self._counter

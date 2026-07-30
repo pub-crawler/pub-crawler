@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Node database ID increments more slowly
 
+### Changed
+
+- Moved host_* methods from DatabaseGraph to new DatabaseHostSurvey class
+
 ## [0.15.0] - 2026-07-26
 
 ### Changed

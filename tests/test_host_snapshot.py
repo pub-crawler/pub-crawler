@@ -1,7 +1,8 @@
-"""Tests for host_snapshot — write the Graph's hosts out as one Parquet file.
+"""Tests for host_snapshot — write the HostSurvey out as one Parquet file.
 
-snapshot_hosts(G, filename) iterates all_hosts() -> (id, hostname, props) and
-writes one row per host with columns:
+snapshot_hosts(survey, filename) iterates the HostSurvey container's
+all_hosts() -> (id, hostname, props) and writes one row per host with
+columns:
 
   id, hostname, last_fetch_date, failure, error_detail, nodeinfo_version,
   software_name, software_version, users_total, users_active_month,
@@ -29,7 +30,7 @@ from datetime import datetime, timezone
 import pyarrow.parquet as pq
 
 from host_snapshot import snapshot_hosts
-from support import FakeGraph
+from support import FakeHostSurvey
 
 HOST_COLUMNS = [
     "id",
@@ -69,17 +70,17 @@ def rows_by_hostname(filename):
     return {row["hostname"]: row for row in pq.read_table(filename).to_pylist()}
 
 
-async def graph_with(**hosts):
-    g = FakeGraph()
+async def survey_with(**hosts):
+    survey = FakeHostSurvey()
     for hostname, props in hosts.items():
-        await g.ensure_host(hostname)
+        await survey.ensure_host(hostname)
         if props:
-            await g.set_host_properties(hostname, props)
-    return g
+            await survey.set_host_properties(hostname, props)
+    return survey
 
 
 async def test_writes_host_parquet_with_expected_columns(tmp_path):
-    g = await graph_with(
+    g = await survey_with(
         **{
             "live.example": dict(SURVEYED),
             "dead.example": dict(FAILED),
@@ -118,7 +119,7 @@ async def test_writes_host_parquet_with_expected_columns(tmp_path):
 
 
 async def test_last_fetch_date_becomes_a_utc_timestamp(tmp_path):
-    g = await graph_with(**{"live.example": dict(SURVEYED)})
+    g = await survey_with(**{"live.example": dict(SURVEYED)})
     out = tmp_path / "hosts.parquet"
 
     await snapshot_hosts(g, str(out))
@@ -130,7 +131,7 @@ async def test_last_fetch_date_becomes_a_utc_timestamp(tmp_path):
 async def test_malformed_last_fetch_date_does_not_sink_the_snapshot(tmp_path):
     # The `published` lesson: one corrupt timestamp must not crash the pass.
     # The bad value nulls out, the row survives, neighbours are unaffected.
-    g = await graph_with(
+    g = await survey_with(
         **{
             "corrupt.example": {"last_fetch_date": "not a date", "failure": "error"},
             "fine.example": dict(SURVEYED),
@@ -152,7 +153,7 @@ async def test_malformed_last_fetch_date_does_not_sink_the_snapshot(tmp_path):
 async def test_ignores_properties_outside_the_column_set(tmp_path):
     # Future survey versions may store more properties (peers_count, schema
     # validity, ...). Only the declared columns are emitted.
-    g = await graph_with(
+    g = await survey_with(
         **{"live.example": {**SURVEYED, "peers_count": 4200, "extra": "x"}}
     )
     out = tmp_path / "hosts.parquet"
@@ -168,7 +169,7 @@ async def test_unicode_error_detail_roundtrips(tmp_path):
     # error_detail is a repr of whatever the network threw at us — it can carry
     # non-ASCII (IDN hostnames in messages, for one). Parquet is UTF-8 native.
     detail = "ConnectError('bawü.social: café ⁂ 韓')"
-    g = await graph_with(
+    g = await survey_with(
         **{"idn.example": {"failure": "connect_error", "error_detail": detail}}
     )
     out = tmp_path / "hosts.parquet"
@@ -182,7 +183,7 @@ async def test_empty_graph_writes_empty_typed_parquet(tmp_path):
     # Zero hosts still produces a readable file carrying the full schema.
     out = tmp_path / "hosts.parquet"
 
-    await snapshot_hosts(FakeGraph(), str(out))
+    await snapshot_hosts(FakeHostSurvey(), str(out))
 
     table = pq.read_table(str(out))
     assert table.column_names == HOST_COLUMNS
