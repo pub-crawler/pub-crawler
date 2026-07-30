@@ -47,8 +47,8 @@ class HostSurveyor:
                 props["failure"] = "nodeinfo_invalid"
                 props["error_detail"] = "No data returned from get_nodeinfo()"
             else:
-              filtered = {k: v for k, v in fetched.items() if v is not None}
-              props = {**filtered, **props}
+                filtered = {k: v for k, v in fetched.items() if v is not None}
+                props = {**filtered, **props}
         except Exception as exc:
             props["failure"] = classify_exception(exc)
             props["error_detail"] = repr(exc)[:500]
