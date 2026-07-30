@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - host_survey module to get properties for a host (including error data)
+- survey_hosts.py script to survey hosts from node data
 
 ## [0.15.0] - 2026-07-26
 
