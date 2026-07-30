@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - survey_hosts.py script to survey hosts from node data
 - host_snapshot.py to get a Parquet file snapshot of hosts data
 
+### Fixed
+
+- Node database ID increments more slowly
+
 ## [0.15.0] - 2026-07-26
 
 ### Changed
