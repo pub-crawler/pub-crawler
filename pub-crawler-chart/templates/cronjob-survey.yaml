@@ -1,0 +1,46 @@
+{{- if .Values.survey.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "pub-crawler.fullname" . }}-survey
+  labels:
+    {{- include "pub-crawler.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.survey.schedule | quote }}
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      backoffLimit: {{ .Values.job.backoffLimit }}
+      template:
+        metadata:
+          labels:
+            {{- include "pub-crawler.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: survey
+        spec:
+          restartPolicy: Never
+          {{- with .Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          securityContext:
+            {{- toYaml .Values.podSecurityContext | nindent 12 }}
+          containers:
+            - name: survey
+              image: {{ include "pub-crawler.image" . }}
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              command:
+                - python
+                - bin/survey_hosts.py
+                - "--max-age"
+                - {{ .Values.survey.maxAge | quote }}
+                - "--max-workers"
+                - {{ .Values.survey.maxWorkers | quote }}
+              securityContext:
+                {{- toYaml .Values.securityContext | nindent 16 }}
+              env:
+                {{- include "pub-crawler.dbEnv" . | nindent 16 }}
+              {{- with .Values.survey.resources }}
+              resources:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+{{- end }}

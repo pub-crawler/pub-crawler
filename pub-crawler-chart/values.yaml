@@ -269,6 +269,39 @@ snapshot:
       cpu: 500m
       memory: 256Mi
 
+# Host survey: survey_hosts.py probes every hostname seen in the crawl for
+# liveness + nodeinfo, writing results to the host tables. Needs DATABASE_URL
+# only (no Redis) plus outbound HTTPS. Idempotent per --max-age window, so a
+# missed or doubled run is harmless. Off by default: enable after a manual
+# `--limit 200` smoke run has validated egress from the cluster.
+survey:
+  enabled: false
+  schedule: "0 0 * * *"   # nightly, clear of the 03:00 graph snapshot
+  maxAge: "1d"
+  maxWorkers: 50
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# Host snapshot: host_snapshot.py exports the host survey to a dated Parquet
+# file on the snapshots PVC. Scheduled after the nightly survey finishes
+# (survey is 1-3h) and clear of the 03:00 graph snapshot; same RWO-PVC
+# collision caveat as crest-watch.
+hostSnapshot:
+  enabled: false
+  schedule: "0 5 * * *"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
 # Crest-watch: every 30 min, append one queue-size / front-lag / memory sample to
 # crest-watch.log on the persistence volume — in-cluster monitoring that survives
 # laptop sleep (unlike a local watch loop). Shares the snapshots PVC (RWO); a sample

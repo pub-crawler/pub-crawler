@@ -1,0 +1,56 @@
+{{- if .Values.hostSnapshot.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "pub-crawler.fullname" . }}-host-snapshot
+  labels:
+    {{- include "pub-crawler.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.hostSnapshot.schedule | quote }}
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      backoffLimit: {{ .Values.job.backoffLimit }}
+      template:
+        metadata:
+          labels:
+            {{- include "pub-crawler.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: host-snapshot
+        spec:
+          restartPolicy: Never
+          {{- with .Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          securityContext:
+            {{- toYaml .Values.podSecurityContext | nindent 12 }}
+          containers:
+            - name: host-snapshot
+              image: {{ include "pub-crawler.image" . }}
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              command:
+                - sh
+                - -c
+                - |
+                  hosts={{ .Values.persistence.mountPath }}/host-survey-$(date +%F-%H%M%S).parquet
+                  python bin/host_snapshot.py --host-filename "$hosts"
+              securityContext:
+                {{- toYaml .Values.securityContext | nindent 16 }}
+              env:
+                {{- include "pub-crawler.dbEnv" . | nindent 16 }}
+              volumeMounts:
+                - name: data
+                  mountPath: {{ .Values.persistence.mountPath }}
+              {{- with .Values.hostSnapshot.resources }}
+              resources:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+          volumes:
+            - name: data
+              {{- if .Values.persistence.enabled }}
+              persistentVolumeClaim:
+                claimName: {{ include "pub-crawler.fullname" . }}-snapshots
+              {{- else }}
+              emptyDir: {}
+              {{- end }}
+{{- end }}
