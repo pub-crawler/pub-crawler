@@ -7,9 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- host_survey module to get properties for a host (including error data)
+
 ## [0.15.0] - 2026-07-26
 
-### Change
+### Changed
 
 - summary, properties in snapshot output
 
