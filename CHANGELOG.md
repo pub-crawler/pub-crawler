@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.4] - 2026-07-31
+
 ### Fixed
 
 - Upper boundary of 128KiB on nodeinfo responses
@@ -374,7 +376,8 @@ keepalive connections in ActivityPubClient and WebfingerClient
 - Crawler max depth defaults to 1.
 - `DatabaseGraph` no longer uses its own transaction.
 
-[Unreleased]: https://github.com/pub-crawler/pub-crawler/compare/v0.16.3...HEAD
+[Unreleased]: https://github.com/pub-crawler/pub-crawler/compare/v0.16.4...HEAD
+[0.16.4]: https://github.com/pub-crawler/pub-crawler/compare/v0.16.3...v0.16.4
 [0.16.3]: https://github.com/pub-crawler/pub-crawler/compare/v0.16.2...v0.16.3
 [0.16.2]: https://github.com/pub-crawler/pub-crawler/compare/v0.16.1...v0.16.2
 [0.16.1]: https://github.com/pub-crawler/pub-crawler/compare/v0.16.0...v0.16.1
