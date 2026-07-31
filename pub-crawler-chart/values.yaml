@@ -282,10 +282,13 @@ survey:
   resources:
     requests:
       cpu: 100m
-      memory: 256Mi
+      memory: 512Mi
     limits:
       cpu: 500m
-      memory: 512Mi
+      # A full-population run was OOMKilled at 512Mi after 15h: survey_hosts
+      # gathers one task per due host (~85k) up-front. 1Gi is headroom until
+      # the driver bounds task creation (batched gather).
+      memory: 1Gi
 
 # Host snapshot: host_snapshot.py exports the host survey to a dated Parquet
 # file on the snapshots PVC. Scheduled 12h after the weekly survey starts
