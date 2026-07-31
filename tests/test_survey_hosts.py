@@ -33,6 +33,7 @@ Assumed contract (adjust the tests if the shape differs).
 """
 
 import asyncio
+import logging
 from datetime import datetime, timedelta, timezone
 
 from support import FakeGraph, FakeHostSurvey
@@ -254,6 +255,47 @@ async def test_one_failing_save_does_not_abort_the_run():
     assert "z.example" in surveyor.surveyed
     assert "last_fetch_date" in await survey.get_host_properties("a.example")
     assert "last_fetch_date" in await survey.get_host_properties("z.example")
+
+
+async def test_a_failing_host_does_not_kill_its_worker():
+    # Sharper than the test above: with a SINGLE worker, a failing host must
+    # not end that worker's loop — the pool would silently shrink to zero and
+    # the run would hang (which the timeout converts into a fast failure).
+    # Hostnames chosen so the failing one is queued first.
+    survey = SaveExplodesFor("a-bad.example")
+    for hostname in ("a-bad.example", "b.example", "c.example", "d.example"):
+        await survey.ensure_host(hostname)
+    surveyor = FakeSurveyor()
+
+    await asyncio.wait_for(
+        survey_hosts(survey, surveyor, max_age=WEEK, max_workers=1), timeout=5
+    )
+
+    # The lone worker survived the failure and processed everything after it.
+    for hostname in ("b.example", "c.example", "d.example"):
+        assert hostname in surveyor.surveyed
+        assert "last_fetch_date" in await survey.get_host_properties(hostname)
+
+
+# ---------------------------------------------------------------------------
+# Progress: a heartbeat every SURVEY_HOST_REPORT_LIMIT-th host, so a
+# multi-hour run is observable from its logs (a silent run reads as a hung
+# run — this pin keeps the heartbeat from being refactored away again)
+# ---------------------------------------------------------------------------
+
+
+async def test_progress_is_logged_periodically(caplog, monkeypatch):
+    import survey_hosts as survey_hosts_module
+
+    monkeypatch.setattr(survey_hosts_module, "SURVEY_HOST_REPORT_LIMIT", 10)
+    survey = await survey_with_hosts(**{f"h{i}.example": None for i in range(25)})
+    surveyor = FakeSurveyor()
+
+    with caplog.at_level(logging.INFO):
+        await survey_hosts(survey, surveyor, max_age=WEEK)
+
+    progress = [r for r in caplog.records if "surveyed" in r.message]
+    assert len(progress) >= 2  # 25 hosts at interval 10 -> at least two beats
 
 
 # ---------------------------------------------------------------------------

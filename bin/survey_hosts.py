@@ -25,6 +25,8 @@ DEFAULT_LIMIT = None
 SEED_HOSTS_REPORT_LIMIT = 100_000
 SEED_HOSTS_BATCH_LIMIT = 1000
 
+SCAN_HOST_REPORT_LIMIT = 10_000
+SURVEY_HOST_REPORT_LIMIT = 100
 
 async def seed_hosts_from_nodes(G, H):
     node_count = 0
@@ -56,8 +58,9 @@ async def seed_hosts_from_nodes(G, H):
         logging.info(f"{host_count} hosts ensured")
 
 
-async def survey_one(hostname, H, surveyor, sem):
-    async with sem:
+async def survey_worker(queue, H, surveyor):
+    while True:
+        hostname = await queue.get()
         try:
             props = await surveyor.survey(hostname)
             delete_props = [k for k, v in props.items() if v is None]
@@ -66,15 +69,26 @@ async def survey_one(hostname, H, surveyor, sem):
             await H.set_host_properties(hostname, set_props)
         except Exception as e:
             logging.warning(f"{hostname}: {e!r}")
-            return None
+        finally:
+            queue.task_done()
 
 
 async def survey_hosts(
     H, surveyor, *, max_age, max_workers=DEFAULT_MAX_WORKERS, limit=DEFAULT_LIMIT
 ):
+
+    queue = asyncio.Queue(maxsize=max_workers * 2)
+
+    workers = [
+        asyncio.create_task(survey_worker(queue, H, surveyor))
+        for _ in range(max_workers)
+    ]
+
     cutoff = datetime.now(timezone.utc) - max_age
     to_survey = []
+    count = 0
     async for _, hostname, props in H.all_hosts():
+        count += 1
         if "last_fetch_date" not in props:
             to_survey.append(hostname)
         else:
@@ -89,13 +103,27 @@ async def survey_hosts(
         if limit is not None and len(to_survey) >= limit:
             break
 
-    sem = asyncio.Semaphore(max_workers)
+        if count % SCAN_HOST_REPORT_LIMIT == 0:
+            logging.info(f"{count} hosts seen, {len(to_survey)} to survey")
 
-    await asyncio.gather(
-        *(survey_one(hostname, H, surveyor, sem) for hostname in to_survey)
-    )
+    logging.info(f"FINAL: {count} hosts seen, {len(to_survey)} to survey")
 
-    return len(to_survey)
+    survey_count = 0
+
+    for hostname in to_survey:
+        survey_count += 1
+        await queue.put(hostname)
+        if survey_count % SURVEY_HOST_REPORT_LIMIT == 0:
+            logging.info(f"{survey_count} hosts surveyed")
+
+    await queue.join()
+
+    for w in workers:
+        w.cancel()
+
+    await asyncio.gather(*workers, return_exceptions=True)
+
+    return survey_count
 
 
 async def main(database_url, max_age, max_workers, limit, seed):
