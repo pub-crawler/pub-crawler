@@ -28,6 +28,7 @@ SEED_HOSTS_BATCH_LIMIT = 1000
 SCAN_HOST_REPORT_LIMIT = 10_000
 SURVEY_HOST_REPORT_LIMIT = 100
 
+
 async def seed_hosts_from_nodes(G, H):
     node_count = 0
 

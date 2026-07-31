@@ -14,7 +14,11 @@ One module, two halves:
       unrecognized rels are ignored. The href may be relative (resolved against the discovery
       URL) or cross-origin.
       None for any application-level failure: no usable link in the
-      discovery doc, or an unparseable (non-JSON) body on either fetch.
+      discovery doc, an unparseable (non-JSON) body on either fetch, or a
+      body exceeding MAX_RESPONSE_BYTES (100_000 — real nodeinfo documents
+      run 2-30KB; oversized bodies are hostile servers — anti-bot
+      tarpits — or misconfigured ones, and must not be buffered into
+      memory: one such host OOMKilled two full survey runs).
       Transport errors and HTTP status errors still raise (raise_for_status
       on both responses). Hostnames are IDNA-encoded (A-label) on the wire.
       Both counters are acquired, keyed by origin, before each of the two
@@ -195,6 +199,32 @@ async def test_unparseable_body_returns_none(path):
         if request.url.path == path:
             return httpx.Response(200, text="<html>oops</html>")
         return httpx.Response(200, json=discovery("2.0", href="/nodeinfo/2.0"))
+
+    assert await make_client(handler).get_nodeinfo("crawler.pub") is None
+
+
+@pytest.mark.parametrize("path", ["/.well-known/nodeinfo", "/nodeinfo/2.0"])
+async def test_oversized_body_returns_none(path):
+    # The OOM defense: a VALID but enormous document (content is a lie some
+    # hosts tell — catch-all routes, gzip bombs) must be refused, not
+    # buffered and parsed. Valid-but-padded pins the size cap specifically:
+    # a garbage body would already fail the JSON parse.
+    big_doc = dict(MASTODON_DOC)
+    big_doc["padding"] = "x" * 200_000  # > MAX_RESPONSE_BYTES (100_000)
+    big_discovery = discovery("2.0", href="/nodeinfo/2.0")
+    big_discovery["padding"] = "x" * 200_000
+
+    def handler(request):
+        if request.url.path == "/.well-known/nodeinfo":
+            doc = (
+                big_discovery
+                if path == "/.well-known/nodeinfo"
+                else discovery("2.0", href="/nodeinfo/2.0")
+            )
+            return httpx.Response(200, json=doc)
+        return httpx.Response(
+            200, json=big_doc if path == "/nodeinfo/2.0" else MASTODON_DOC
+        )
 
     assert await make_client(handler).get_nodeinfo("crawler.pub") is None
 

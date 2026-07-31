@@ -10,6 +10,8 @@ DEFAULT_KEEPALIVE_EXPIRY = 10  # Burst window
 DEFAULT_CONNECT_TIMEOUT = 5.0
 DEFAULT_RESPONSE_TIMEOUT = 30.0
 
+MAX_RESPONSE_BYTES = 128 * 1028
+CHUNK_SIZE = 16 * 1028
 
 PREFIX = "http://nodeinfo.diaspora.software/ns/schema/"
 VERSIONS = ["2.2", "2.1", "2.0", "1.1", "1.0"]
@@ -101,10 +103,12 @@ class NodeinfoClient:
             "User-Agent": "crawler.pub/0.16.3 (https://crawler.pub/; evanp@gatech.edu)",
             "Accept": "application/json;q=1.0",
         }
-        res = await self.client.get(url, headers=headers, follow_redirects=True)
-        res.raise_for_status()
+        res = await self._safe_get(url, headers)
+        if res is None:
+            return None
+        content, url = res
         try:
-            doc = orjson.loads(res.content)
+            doc = orjson.loads(content)
         except orjson.JSONDecodeError:
             return None
         links = doc.get("links")
@@ -130,20 +134,19 @@ class NodeinfoClient:
         if besthref is None:
             return None
 
-        nodeinfo_url = urljoin(str(res.url), besthref)
+        nodeinfo_url = urljoin(str(url), besthref)
         nodeinfo_url_parts = urlsplit(nodeinfo_url)
         nodeinfo_url_origin = f"https://{nodeinfo_url_parts.netloc}"
 
         await self.general.acquire(nodeinfo_url_origin)
         await self.burst.acquire(nodeinfo_url_origin)
 
-        res = await self.client.get(
-            nodeinfo_url, headers=headers, follow_redirects=True
-        )
-
-        res.raise_for_status()
+        res = await self._safe_get(nodeinfo_url, headers)
+        if res is None:
+            return None
+        content, url = res
         try:
-            doc = orjson.loads(res.content)
+            doc = orjson.loads(content)
         except orjson.JSONDecodeError:
             return None
 
@@ -185,3 +188,16 @@ class NodeinfoClient:
 
     async def aclose(self):
         await self.client.aclose()
+
+    async def _safe_get(self, url, headers):
+        async with self.client.stream(
+            "GET", url, headers=headers, follow_redirects=True
+        ) as response:
+            response.raise_for_status()
+            buf = bytearray()
+            async for chunk in response.aiter_bytes(chunk_size=CHUNK_SIZE):
+                if len(buf) + len(chunk) > MAX_RESPONSE_BYTES:
+                    return None
+                buf.extend(chunk)
+            body = bytes(buf)
+            return body, str(response.url)
