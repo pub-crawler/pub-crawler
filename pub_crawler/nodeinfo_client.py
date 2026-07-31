@@ -100,7 +100,7 @@ class NodeinfoClient:
         await self.burst.acquire(origin)
         url = f"{origin}/.well-known/nodeinfo"
         headers = {
-            "User-Agent": "crawler.pub/0.16.3 (https://crawler.pub/; evanp@gatech.edu)",
+            "User-Agent": "crawler.pub/0.16.4 (https://crawler.pub/; evanp@gatech.edu)",
             "Accept": "application/json;q=1.0",
         }
         res = await self._safe_get(url, headers)
