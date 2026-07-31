@@ -4,10 +4,10 @@ description: Fediverse follower/following graph crawler — crawls signed Activi
 type: application
 
 # Chart version — bump on chart changes, independent of the app image.
-version: 0.20.2
+version: 0.20.3
 
 # Default application image tag (overridable via image.tag).
-appVersion: "0.16.2"
+appVersion: "0.16.3"
 
 home: https://crawler.pub
 sources:
