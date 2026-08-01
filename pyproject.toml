@@ -9,7 +9,7 @@ requires-python = ">=3.13"
 dependencies = [
     "asyncpg>=0.31.0",
     "cachetools>=7.1.4",
-    "cryptography>=48.0.0",
+    "cryptography>=49.0.0",
     "httpx[http2]>=0.28.1",
     "idna>=3.18",
     "networkx>=3.6.1",
